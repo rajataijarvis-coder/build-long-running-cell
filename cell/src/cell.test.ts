@@ -46,7 +46,7 @@ describe('Cell', () => {
     assert.equal(latest?.result, 'success');
   });
 
-  it('fails verification and records failure', async () => {
+  it('fails loop convergence and records failure', async () => {
     const cell = new Cell({
       basePath,
       verificationCommands: [['false', []]],
@@ -56,16 +56,15 @@ describe('Cell', () => {
 
     await cell.tick(); // idle -> planning
     await cell.tick(); // planning -> executing
-    await cell.tick(); // executing -> verifying
     try {
-      await cell.tick(); // verifying fails
+      await cell.tick(); // executing: loop fails after retries
     } catch {
       // expected
     }
 
-    assert.equal(await cell.state(), 'verifying');
+    assert.equal(await cell.state(), 'executing');
     const latest = await cell.resume();
-    assert.equal(latest?.state, 'verifying');
+    assert.equal(latest?.state, 'executing');
     assert.equal(latest?.result, 'failure');
   });
 });

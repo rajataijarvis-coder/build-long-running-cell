@@ -1,23 +1,27 @@
 import { GitMemory } from './git-memory.js';
 import { ExecutionJournal } from './journal.js';
 import { runVerificationSuite } from './verify.js';
+import { LoopEngine } from './loop-engine.js';
 import type { CellState, JournalEntry, Mission } from './types.js';
 
 export interface CellConfig {
   basePath: string;
   verificationCommands: [string, string[]][];
   maxRetries: number;
+  tools?: import('./loop-engine.js').Tool[];
 }
 
 export class Cell {
   private memory: GitMemory;
   private journal: ExecutionJournal;
+  private loopEngine: LoopEngine;
   private config: CellConfig;
 
   constructor(config: CellConfig) {
     this.config = config;
     this.memory = new GitMemory(config.basePath);
     this.journal = new ExecutionJournal(config.basePath);
+    this.loopEngine = new LoopEngine(config.tools ?? [], config.verificationCommands, config.maxRetries);
   }
 
   async state(): Promise<CellState> {
@@ -80,7 +84,13 @@ export class Cell {
           break;
         case 'executing':
           await this.runPhase(mission, 'executing', async () => {
-            await this.memory.logProgress(`Executing mission ${mission.id}`);
+            const loopResult = await this.loopEngine.run(mission.id, mission.description);
+            await this.memory.logProgress(
+              `Executed mission ${mission.id}: ${loopResult.iterations.length} reasoning loop iterations, success=${loopResult.success}`
+            );
+            if (!loopResult.success) {
+              throw new Error(`Loop did not converge: ${loopResult.finalAnswer}`);
+            }
           });
           mem.currentState = 'verifying';
           break;
