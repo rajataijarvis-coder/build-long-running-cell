@@ -1,0 +1,11 @@
+{
+  "name": "build-long-running-cell",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["cell", "frontend", "scripts"],
+  "scripts": {
+    "verify:cell": "cd cell && npm run verify",
+    "build:frontend": "cd frontend && npm run build",
+    "publish": "node scripts/node_modules/.bin/tsx scripts/publish-chapter.ts"
+  }
+}
