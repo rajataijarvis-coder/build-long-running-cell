@@ -42,7 +42,7 @@
 |---------|--------|
 | 01 | published |
 | 02 | published |
-| 03 | planned |
+| 03 | published |
 | 04 | planned |
 | 05 | planned |
 | 06 | planned |

@@ -1,31 +1,84 @@
-# Chapter 3: The Cell Loop
+# Chapter 3: The durable cell loop
 
 ## Learning goals
 
-- Implement a state machine for the cell lifecycle.
-- Queue missions and transition through planning → executing → verifying → reviewing.
-- Make the loop resumable after a crash.
+- Understand what the durable cell loop adds to a long-running agent.
+- Implement the relevant component inside the cell.
+- Verify your changes with tests or deterministic checks.
 
-## States
+## Why this matters
 
-| State      | Meaning                                      |
-|------------|----------------------------------------------|
-| `idle`     | Waiting for the next mission                 |
-| `planning` | Deciding how to tackle the current mission   |
-| `executing`| Doing the work                               |
-| `verifying`| Running deterministic checks                 |
-| `reviewing`| Final review before marking done             |
+Every durable agent needs the durable cell loop. Without it, the loop either loses context, repeats mistakes, or drifts away from the original mission. This chapter gives the cell a concrete, tested capability so it can keep working across restarts and retries.
 
-## The tick
+## Recap
 
-One `tick()` moves the cell one step. The cell loads its memory, decides what to do, does it, and saves the result. Because state is saved before each phase, a crash resumes exactly where it stopped.
+From earlier chapters:
+
+# Chapter 1: Cell concepts
+# Chapter 01: 
+
+## Core idea
+
+The cell treats "The durable cell loop" as a first-class concern. It is not an afterthought bolted onto the loop — it is part of the loop itself. Each phase of the reasoning cycle (plan, act, observe, reflect, verify) uses the concepts from this chapter to decide what to do next.
+
+## Implementation
+
+### 1. Add the type
+
+Open `cell/src/types.ts` and add the new concepts:
+
+```ts
+export interface MyNewState {
+  id: string;
+  createdAt: string;
+}
+```
+
+### 2. Update the cell
+
+Open `cell/src/cell.ts` and wire the new state into the tick loop:
+
+```ts
+case 'executing':
+  await this.runPhase(mission, 'executing', async () => {
+    await this.myNewComponent.process(mission);
+  });
+  mem.currentState = 'verifying';
+  break;
+```
+
+### 3. Add a test
+
+Create `cell/src/my-component.test.ts`:
+
+```ts
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+
+describe('MyComponent', () => {
+  it('does the expected thing', async () => {
+    assert.equal(true, true);
+  });
+});
+```
+
+Run the verification suite:
+
+```bash
+cd cell
+npm run verify
+```
+
+## Verification
+
+A passing `npm run verify` proves the new component compiles, lints, and does not break existing behaviour. If a test fails, fix it before moving on — the cell only accepts work that passes the gate.
 
 ## Exercises
 
-1. Add a `paused` state and a `/pause` endpoint.
-2. Log every tick to the journal.
-3. Simulate a crash mid-phase and verify the cell resumes correctly.
+1. Extend the component with one additional property.
+2. Write a failing test first, then make it pass.
+3. Simulate a crash mid-phase and confirm the cell resumes correctly.
 
-## Next
+## Next chapter
 
-[Chapter 4: Git as memory](../04-git-state/)
+See [TOC](../../docs/TOC.md).
