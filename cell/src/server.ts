@@ -4,6 +4,8 @@ import { runVerificationSuite } from './verify.js';
 import { Planner } from './planner.js';
 import { Actor, ShellTool } from './actor.js';
 import { Observer } from './observer.js';
+import { Reasoner } from './reasoner.js';
+import { Reflector } from './reflector.js';
 import type { JournalEntry } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -90,6 +92,31 @@ export function startServer(cell: Cell, port = 3456) {
         const realOutput = output !== undefined ? String(output) : await actor.act(action);
         const observation = observer.observe(action, realOutput);
         res.end(JSON.stringify({ ok: true, observation }));
+        return;
+      }
+
+      if (url.pathname === '/reason' && req.method === 'POST') {
+        const { plan, priorThought, priorObservation, context } = await readBody();
+        const reasoner = new Reasoner();
+        const thought = reasoner.reason(
+          plan as import('./types.js').Plan,
+          priorThought as import('./types.js').Thought | undefined,
+          priorObservation as import('./types.js').Observation | undefined,
+          String(context)
+        );
+        res.end(JSON.stringify({ ok: true, thought }));
+        return;
+      }
+
+      if (url.pathname === '/reflect' && req.method === 'POST') {
+        const { observation, verification, attempt } = await readBody();
+        const reflector = new Reflector();
+        const reflection = reflector.reflect(
+          observation as import('./types.js').Observation,
+          verification as import('./types.js').VerificationSummary,
+          Number(attempt)
+        );
+        res.end(JSON.stringify({ ok: true, reflection }));
         return;
       }
 

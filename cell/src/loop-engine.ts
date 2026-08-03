@@ -1,14 +1,18 @@
-import type { Plan, Action, Observation, Tool, VerificationSummary } from './types.js';
+import type { Plan, Thought, Observation, Tool, VerificationSummary, Reflection } from './types.js';
 import { Planner } from './planner.js';
 import { Actor, ShellTool } from './actor.js';
 import { Observer } from './observer.js';
+import { Reasoner } from './reasoner.js';
+import { Reflector } from './reflector.js';
 import { runVerificationSuite } from './verify.js';
 
 export interface LoopIteration {
   step: number;
   plan: Plan;
-  action: Action;
+  thought?: Thought;
+  action: import('./types.js').Action;
   observation: Observation;
+  reflection?: Reflection;
   verification: VerificationSummary;
   passed: boolean;
 }
@@ -21,42 +25,54 @@ export interface LoopResult {
 }
 
 /**
- * Composes Planner → Actor → Observer → Verifier into one reasoning loop.
+ * Composes Planner → Reasoner → Actor → Observer → Reflector → Verifier into
+ * one reasoning loop.
  *
- * Each iteration produces a Plan, executes one Action, observes the result,
- * and runs the verification suite. If verification passes the loop succeeds.
- * Otherwise it retries with the previous context until maxIterations.
+ * Each iteration produces a Plan, reasons about the next action, executes it,
+ * observes the result, reflects on whether to continue, and runs verification.
+ * If verification passes the loop succeeds; otherwise it retries with the
+ * accumulated context until the budget is exhausted.
  */
 export class LoopEngine {
   private planner: Planner;
   private actor: Actor;
   private observer: Observer;
+  private reasoner: Reasoner;
+  private reflector: Reflector;
 
   constructor(
     private readonly tools: Tool[],
     private readonly verificationCommands: [string, string[]][],
     private readonly maxIterations = 3,
-    private readonly observerOptions?: import('./observer.js').ObserverOptions
+    private readonly observerOptions?: import('./observer.js').ObserverOptions,
+    reasoner?: Reasoner,
+    reflector?: Reflector
   ) {
     this.planner = new Planner({ maxSteps: maxIterations });
     this.actor = new Actor([...tools, new ShellTool()]);
     this.observer = new Observer(observerOptions);
+    this.reasoner = reasoner ?? new Reasoner({ maxSteps: maxIterations });
+    this.reflector = reflector ?? new Reflector({ maxAttempts: maxIterations });
   }
 
   async run(missionId: string, task: string): Promise<LoopResult> {
     const iterations: LoopIteration[] = [];
+    let priorThought: Thought | undefined;
+    let priorObservation: Observation | undefined;
 
     for (let step = 1; step <= this.maxIterations; step++) {
       const plan = await this.planner.plan(missionId, task);
-      const action = this.selectAction(plan, step);
+      const thought = this.reasoner.reason(plan, priorThought, priorObservation, task);
+      const action = thought.action;
       const rawOutput = await this.actor.act(action);
       const observation = this.observer.observe(action, rawOutput);
       const verification = await runVerificationSuite(this.verificationCommands);
-      const passed = verification.passed;
+      const reflection = this.reflector.reflect(observation, verification, step);
+      const passed = verification.passed && reflection.verdict !== 'escalate';
 
-      iterations.push({ step, plan, action, observation, verification, passed });
+      iterations.push({ step, plan, thought, action, observation, reflection, verification, passed });
 
-      if (passed) {
+      if (verification.passed && reflection.verdict === 'finish') {
         return {
           missionId,
           iterations,
@@ -65,8 +81,15 @@ export class LoopEngine {
         };
       }
 
+      if (reflection.verdict === 'escalate') {
+        break;
+      }
+
+      // Build richer context for the next attempt.
       const failed = verification.results.find((r) => !r.passed);
-      task += `\nAttempt ${step} failed: ${failed?.stderr ?? 'verification failed'}. Observation: ${observation.note ?? observation.output}`;
+      task += `\nAttempt ${step} failed: ${failed?.stderr ?? 'verification failed'}. Observation: ${observation.note ?? observation.output}. Reflection: ${reflection.note}`;
+      priorThought = thought;
+      priorObservation = observation;
     }
 
     return {
@@ -74,18 +97,6 @@ export class LoopEngine {
       iterations,
       finalAnswer: iterations.at(-1)?.observation.output ?? '',
       success: false,
-    };
-  }
-
-  private selectAction(plan: Plan, step: number): Action {
-    const planStep = plan.steps[step - 1];
-    if (!planStep) {
-      return { stepId: `fallback-${step}`, tool: 'shell', input: 'echo Goal understood' };
-    }
-    return {
-      stepId: planStep.id,
-      tool: planStep.tool ?? 'shell',
-      input: planStep.input ?? 'echo Goal understood',
     };
   }
 }

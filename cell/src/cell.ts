@@ -4,7 +4,9 @@ import { runVerificationSuite } from './verify.js';
 import { LoopEngine } from './loop-engine.js';
 import { Planner } from './planner.js';
 import { ShellTool } from './actor.js';
-import type { CellState, JournalEntry, Mission, Tool } from './types.js';
+import { Reasoner } from './reasoner.js';
+import { Reflector } from './reflector.js';
+import type { CellState, JournalEntry, Mission, Tool, ReasonerOptions, ReflectorOptions } from './types.js';
 
 export interface CellConfig {
   basePath: string;
@@ -12,6 +14,10 @@ export interface CellConfig {
   maxRetries: number;
   tools?: Tool[];
   shellAllowList?: string[];
+  reasoner?: Reasoner;
+  reflector?: Reflector;
+  reasonerOptions?: ReasonerOptions;
+  reflectorOptions?: ReflectorOptions;
 }
 
 export class Cell {
@@ -20,6 +26,8 @@ export class Cell {
   private loopEngine: LoopEngine;
   private planner: Planner;
   private config: CellConfig;
+  private reasoner: Reasoner;
+  private reflector: Reflector;
 
   constructor(config: CellConfig) {
     this.config = config;
@@ -27,9 +35,19 @@ export class Cell {
     this.journal = new ExecutionJournal(config.basePath);
     this.planner = new Planner({ maxSteps: config.maxRetries });
 
+    this.reasoner = config.reasoner ?? new Reasoner(config.reasonerOptions ?? { maxSteps: config.maxRetries });
+    this.reflector = config.reflector ?? new Reflector(config.reflectorOptions ?? { maxAttempts: config.maxRetries });
+
     const shellTool = new ShellTool({ allowList: config.shellAllowList });
     const tools = [...(config.tools ?? []), shellTool];
-    this.loopEngine = new LoopEngine(tools, config.verificationCommands, config.maxRetries);
+    this.loopEngine = new LoopEngine(
+      tools,
+      config.verificationCommands,
+      config.maxRetries,
+      undefined,
+      this.reasoner,
+      this.reflector
+    );
   }
 
   async state(): Promise<CellState> {
@@ -99,6 +117,8 @@ export class Cell {
             await this.memory.logProgress(
               `Executed mission ${mission.id}: ${loopResult.iterations.length} reasoning loop iterations, success=${loopResult.success}`
             );
+            const reflections = loopResult.iterations.map((i) => i.reflection?.verdict ?? 'none').join(', ');
+            await this.memory.recordDecision(`Mission ${mission.id}`, 'Reflections', reflections);
             if (!loopResult.success) {
               throw new Error(`Loop did not converge: ${loopResult.finalAnswer}`);
             }

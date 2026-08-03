@@ -72,6 +72,29 @@ export interface Observation {
   note?: string;
 }
 
+export interface Thought {
+  stepId: string;
+  text: string;
+  action: Action;
+}
+
+export type ReflectionVerdict = 'continue' | 'finish' | 'escalate';
+
+export interface Reflection {
+  stepId: string;
+  verdict: ReflectionVerdict;
+  note: string;
+  shouldRetry: boolean;
+}
+
+export interface ReasonerOptions {
+  maxSteps?: number;
+}
+
+export interface ReflectorOptions {
+  maxAttempts?: number;
+}
+
 export interface Tool {
   name: string;
   description: string;
