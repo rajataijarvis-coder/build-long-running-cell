@@ -2,26 +2,34 @@ import { GitMemory } from './git-memory.js';
 import { ExecutionJournal } from './journal.js';
 import { runVerificationSuite } from './verify.js';
 import { LoopEngine } from './loop-engine.js';
-import type { CellState, JournalEntry, Mission } from './types.js';
+import { Planner } from './planner.js';
+import { ShellTool } from './actor.js';
+import type { CellState, JournalEntry, Mission, Tool } from './types.js';
 
 export interface CellConfig {
   basePath: string;
   verificationCommands: [string, string[]][];
   maxRetries: number;
-  tools?: import('./loop-engine.js').Tool[];
+  tools?: Tool[];
+  shellAllowList?: string[];
 }
 
 export class Cell {
   private memory: GitMemory;
   private journal: ExecutionJournal;
   private loopEngine: LoopEngine;
+  private planner: Planner;
   private config: CellConfig;
 
   constructor(config: CellConfig) {
     this.config = config;
     this.memory = new GitMemory(config.basePath);
     this.journal = new ExecutionJournal(config.basePath);
-    this.loopEngine = new LoopEngine(config.tools ?? [], config.verificationCommands, config.maxRetries);
+    this.planner = new Planner({ maxSteps: config.maxRetries });
+
+    const shellTool = new ShellTool({ allowList: config.shellAllowList });
+    const tools = [...(config.tools ?? []), shellTool];
+    this.loopEngine = new LoopEngine(tools, config.verificationCommands, config.maxRetries);
   }
 
   async state(): Promise<CellState> {
@@ -74,11 +82,14 @@ export class Cell {
       switch (mem.currentState) {
         case 'planning':
           await this.runPhase(mission, 'planning', async () => {
+            const plan = await this.planner.plan(mission.id, mission.description);
+            mem.currentPlan = plan;
             await this.memory.recordDecision(
               `Mission ${mission.id}`,
               'Plan generated',
-              'Break work into plan, code, verify, review steps'
+              `${plan.steps.length} steps: ${plan.steps.map((s) => s.description).join('; ')}`
             );
+            await this.memory.logProgress(`Plan for mission ${mission.id}: ${plan.reasoning}`);
           });
           mem.currentState = 'executing';
           break;
@@ -92,6 +103,7 @@ export class Cell {
               throw new Error(`Loop did not converge: ${loopResult.finalAnswer}`);
             }
           });
+          mem.currentPlan = undefined;
           mem.currentState = 'verifying';
           break;
         case 'verifying':

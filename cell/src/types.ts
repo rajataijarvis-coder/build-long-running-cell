@@ -16,6 +16,7 @@ export interface CellMemory {
   missions: Mission[];
   progressLog: string[];
   decisions: Decision[];
+  currentPlan?: Plan;
 }
 
 export interface Decision {
@@ -42,6 +43,44 @@ export interface WorkItem {
   missionId: string;
   payload: Record<string, unknown>;
   status: 'pending' | 'running' | 'done' | 'failed';
+}
+
+export interface Plan {
+  missionId: string;
+  goal: string;
+  steps: PlanStep[];
+  reasoning: string;
+}
+
+export interface PlanStep {
+  id: string;
+  description: string;
+  tool?: string;
+  input?: string;
+}
+
+export interface Action {
+  stepId: string;
+  tool: string;
+  input: string;
+}
+
+export interface Observation {
+  stepId: string;
+  output: string;
+  success: boolean;
+  note?: string;
+}
+
+export interface Tool {
+  name: string;
+  description: string;
+  execute: (input: string) => Promise<string>;
+}
+
+export interface ToolCall {
+  name: string;
+  input: string;
 }
 
 export interface VerificationResult {
