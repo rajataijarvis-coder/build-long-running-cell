@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { Cell } from './cell.js';
+import { runVerificationSuite } from './verify.js';
 import type { JournalEntry } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -36,6 +37,17 @@ export function startServer(cell: Cell, port = 3456) {
         const missionId = url.searchParams.get('missionId') ?? undefined;
         const latest = await cell.resume(missionId);
         res.end(JSON.stringify({ latest }));
+        return;
+      }
+
+      if (url.pathname === '/verify' && req.method === 'POST') {
+        const summary = await runVerificationSuite([
+          ['npm', ['run', 'lint']],
+          ['npm', ['run', 'build']],
+          ['npm', ['test']],
+        ]);
+        res.statusCode = summary.passed ? 200 : 500;
+        res.end(JSON.stringify({ ok: summary.passed, summary }));
         return;
       }
 

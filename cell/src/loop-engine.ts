@@ -1,5 +1,5 @@
 import { runVerificationSuite } from './verify.js';
-import type { VerificationResult } from './types.js';
+import type { VerificationSummary } from './types.js';
 
 export interface Tool {
   name: string;
@@ -13,7 +13,7 @@ export interface LoopIteration {
   action: string;
   observation: string;
   reflection: string;
-  verification: VerificationResult[];
+  verification: VerificationSummary;
   passed: boolean;
 }
 
@@ -48,7 +48,7 @@ export class LoopEngine {
       const observation = await this.act(action);
       const reflection = this.reflect(observation, step === this.maxIterations);
       const verification = await runVerificationSuite(this.verificationCommands);
-      const passed = verification.every((r) => r.passed);
+      const passed = verification.passed;
 
       iterations.push({ step, thought, action, observation, reflection, verification, passed });
 
@@ -61,7 +61,7 @@ export class LoopEngine {
         };
       }
 
-      const failed = verification.find((r) => !r.passed);
+      const failed = verification.results.find((r) => !r.passed);
       context += `\nAttempt ${step} failed: ${failed?.stderr ?? 'verification failed'}. Reflection: ${reflection}`;
     }
 

@@ -51,3 +51,8 @@ export interface VerificationResult {
   stderr: string;
   exitCode: number;
 }
+
+export interface VerificationSummary {
+  passed: boolean;
+  results: VerificationResult[];
+}

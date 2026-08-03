@@ -96,9 +96,9 @@ export class Cell {
           break;
         case 'verifying':
           await this.runPhase(mission, 'verifying', async () => {
-            const results = await runVerificationSuite(this.config.verificationCommands);
-            const failed = results.find((r) => !r.passed);
-            if (failed) {
+            const summary = await runVerificationSuite(this.config.verificationCommands);
+            if (!summary.passed) {
+              const failed = summary.results.find((r) => !r.passed)!;
               throw new Error(`Verification failed: ${failed.command}\n${failed.stderr}`);
             }
             await this.memory.logProgress(`Verification passed for mission ${mission.id}`);
