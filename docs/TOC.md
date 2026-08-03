@@ -43,7 +43,7 @@
 | 01 | published |
 | 02 | published |
 | 03 | published |
-| 04 | planned |
+| 04 | published |
 | 05 | planned |
 | 06 | planned |
 | 07 | planned |
