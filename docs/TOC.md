@@ -41,7 +41,7 @@
 | Chapter | Status |
 |---------|--------|
 | 01 | published |
-| 02 | planned |
+| 02 | published |
 | 03 | planned |
 | 04 | planned |
 | 05 | planned |
