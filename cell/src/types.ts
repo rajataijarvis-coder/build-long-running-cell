@@ -106,6 +106,13 @@ export interface ToolCall {
   input: string;
 }
 
+/** Registry metadata that lets a planner or reasoner pick the right tool. */
+export interface ToolRegistry {
+  tools: Tool[];
+  byName(name: string): Tool | undefined;
+  descriptions(): string;
+}
+
 export interface VerificationResult {
   passed: boolean;
   command: string;

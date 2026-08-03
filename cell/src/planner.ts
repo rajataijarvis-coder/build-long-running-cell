@@ -20,12 +20,16 @@ export class Planner {
       steps.push({ id: 'step-1', description: 'Run the verification suite', tool: 'shell', input: 'npm run verify' });
     }
 
-    if (lower.includes('file') || lower.includes('create') || lower.includes('write')) {
-      steps.push({ id: 'step-2', description: 'Inspect or edit the relevant file', tool: 'shell', input: 'echo Inspect file' });
+    if (lower.includes('read') || lower.includes('inspect') || lower.includes('check')) {
+      steps.push({ id: 'step-2', description: 'Read the relevant file', tool: 'read_file', input: 'src/main.ts' });
     }
 
-    if (lower.includes('read') || lower.includes('inspect') || lower.includes('check')) {
-      steps.push({ id: 'step-3', description: 'Read the state or journal', tool: 'shell', input: 'echo Read state' });
+    if (lower.includes('edit') || lower.includes('fix') || lower.includes('patch')) {
+      steps.push({ id: 'step-3', description: 'Edit the relevant file', tool: 'edit_file', input: 'src/main.ts\nOLD\nNEW' });
+    }
+
+    if (lower.includes('create') || lower.includes('new file') || lower.includes('write')) {
+      steps.push({ id: 'step-4', description: 'Create or write the relevant file', tool: 'shell', input: 'echo Create file' });
     }
 
     // Always end with a review step if nothing else matched.

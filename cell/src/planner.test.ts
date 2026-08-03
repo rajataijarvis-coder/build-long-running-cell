@@ -15,7 +15,7 @@ describe('Planner', () => {
   it('creates an inspection plan when the goal mentions reading files', async () => {
     const planner = new Planner({ maxSteps: 3 });
     const plan = await planner.plan('mission-2', 'Inspect the journal and state files');
-    assert.ok(plan.steps.some((s) => (s.input ?? '').includes('Read state')));
+    assert.ok(plan.steps.some((s) => s.tool === 'read_file'));
   });
 
   it('caps steps at maxSteps', async () => {

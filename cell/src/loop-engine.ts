@@ -1,10 +1,11 @@
-import type { Plan, Thought, Observation, Tool, VerificationSummary, Reflection } from './types.js';
+import type { Plan, Thought, Observation, Tool, ToolRegistry, VerificationSummary, Reflection } from './types.js';
 import { Planner } from './planner.js';
-import { Actor, ShellTool } from './actor.js';
+import { Actor } from './actor.js';
 import { Observer } from './observer.js';
 import { Reasoner } from './reasoner.js';
 import { Reflector } from './reflector.js';
 import { runVerificationSuite } from './verify.js';
+import { ShellTool, ToolRegistryImpl } from './tools.js';
 
 export interface LoopIteration {
   step: number;
@@ -39,6 +40,7 @@ export class LoopEngine {
   private observer: Observer;
   private reasoner: Reasoner;
   private reflector: Reflector;
+  private registry: ToolRegistry;
 
   constructor(
     private readonly tools: Tool[],
@@ -46,12 +48,14 @@ export class LoopEngine {
     private readonly maxIterations = 3,
     private readonly observerOptions?: import('./observer.js').ObserverOptions,
     reasoner?: Reasoner,
-    reflector?: Reflector
+    reflector?: Reflector,
+    registry?: ToolRegistry
   ) {
+    this.registry = registry ?? new ToolRegistryImpl([...tools, new ShellTool()]);
     this.planner = new Planner({ maxSteps: maxIterations });
-    this.actor = new Actor([...tools, new ShellTool()]);
+    this.actor = new Actor(this.registry);
     this.observer = new Observer(observerOptions);
-    this.reasoner = reasoner ?? new Reasoner({ maxSteps: maxIterations });
+    this.reasoner = reasoner ?? new Reasoner({ maxSteps: maxIterations }, this.registry);
     this.reflector = reflector ?? new Reflector({ maxAttempts: maxIterations });
   }
 

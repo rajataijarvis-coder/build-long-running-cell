@@ -2,10 +2,11 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { Cell } from './cell.js';
 import { runVerificationSuite } from './verify.js';
 import { Planner } from './planner.js';
-import { Actor, ShellTool } from './actor.js';
+import { Actor } from './actor.js';
 import { Observer } from './observer.js';
 import { Reasoner } from './reasoner.js';
 import { Reflector } from './reflector.js';
+import { ToolRegistryImpl, ShellTool } from './tools.js';
 import type { JournalEntry } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -86,12 +87,25 @@ export function startServer(cell: Cell, port = 3456) {
 
       if (url.pathname === '/observe' && req.method === 'POST') {
         const { tool, input, output } = await readBody();
-        const actor = new Actor([new ShellTool()]);
+        const registry = new ToolRegistryImpl([new ShellTool()]);
+        const actor = new Actor(registry);
         const observer = new Observer();
         const action = { stepId: 'manual', tool: String(tool), input: String(input) };
         const realOutput = output !== undefined ? String(output) : await actor.act(action);
         const observation = observer.observe(action, realOutput);
         res.end(JSON.stringify({ ok: true, observation }));
+        return;
+      }
+
+      if (url.pathname === '/tool' && req.method === 'POST') {
+        const { tool, input } = await readBody();
+        const registry = new ToolRegistryImpl([
+          new ShellTool(),
+          ...(await cellTools()),
+        ]);
+        const actor = new Actor(registry);
+        const result = await actor.act({ stepId: 'manual', tool: String(tool), input: String(input) });
+        res.end(JSON.stringify({ ok: true, output: result }));
         return;
       }
 
@@ -133,4 +147,13 @@ export function startServer(cell: Cell, port = 3456) {
   });
 
   return server;
+}
+
+async function cellTools(): Promise<import('./types.js').Tool[]> {
+  const { ReadFileTool, EditFileTool, VerifyTool } = await import('./tools.js');
+  return [
+    new ReadFileTool(process.cwd()),
+    new EditFileTool(process.cwd()),
+    new VerifyTool(),
+  ];
 }

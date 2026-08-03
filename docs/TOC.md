@@ -48,7 +48,7 @@
 | 06 | published |
 | 07 | published |
 | 08 | published |
-| 09 | planned |
+| 09 | published |
 | 10 | planned |
 | 11 | planned |
 | 12 | planned |

@@ -3,10 +3,10 @@ import { ExecutionJournal } from './journal.js';
 import { runVerificationSuite } from './verify.js';
 import { LoopEngine } from './loop-engine.js';
 import { Planner } from './planner.js';
-import { ShellTool } from './actor.js';
+import { ShellTool, ReadFileTool, EditFileTool, VerifyTool, ToolRegistryImpl } from './tools.js';
 import { Reasoner } from './reasoner.js';
 import { Reflector } from './reflector.js';
-import type { CellState, JournalEntry, Mission, Tool, ReasonerOptions, ReflectorOptions } from './types.js';
+import type { CellState, JournalEntry, Mission, Tool, ToolRegistry, ReasonerOptions, ReflectorOptions } from './types.js';
 
 export interface CellConfig {
   basePath: string;
@@ -35,18 +35,26 @@ export class Cell {
     this.journal = new ExecutionJournal(config.basePath);
     this.planner = new Planner({ maxSteps: config.maxRetries });
 
-    this.reasoner = config.reasoner ?? new Reasoner(config.reasonerOptions ?? { maxSteps: config.maxRetries });
+    const customTools = config.tools ?? [];
+    const defaultRegistry: ToolRegistry = new ToolRegistryImpl([
+      ...customTools,
+      new ShellTool({ allowList: config.shellAllowList }),
+      new ReadFileTool(config.basePath),
+      new EditFileTool(config.basePath),
+      new VerifyTool(config.verificationCommands),
+    ]);
+
+    this.reasoner = config.reasoner ?? new Reasoner(config.reasonerOptions ?? { maxSteps: config.maxRetries }, defaultRegistry);
     this.reflector = config.reflector ?? new Reflector(config.reflectorOptions ?? { maxAttempts: config.maxRetries });
 
-    const shellTool = new ShellTool({ allowList: config.shellAllowList });
-    const tools = [...(config.tools ?? []), shellTool];
     this.loopEngine = new LoopEngine(
-      tools,
+      customTools,
       config.verificationCommands,
       config.maxRetries,
       undefined,
       this.reasoner,
-      this.reflector
+      this.reflector,
+      defaultRegistry
     );
   }
 
