@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { Cell } from './cell.js';
-
+import type { JournalEntry } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -33,8 +33,16 @@ export function startServer(cell: Cell, port = 3456) {
       }
 
       if (url.pathname === '/resume') {
-        const latest = await cell.resume();
+        const missionId = url.searchParams.get('missionId') ?? undefined;
+        const latest = await cell.resume(missionId);
         res.end(JSON.stringify({ latest }));
+        return;
+      }
+
+      if (url.pathname === '/runs') {
+        const result = url.searchParams.get('result') as JournalEntry['result'] | null;
+        const runs = await cell.runs(result ?? undefined);
+        res.end(JSON.stringify({ runs }));
         return;
       }
 

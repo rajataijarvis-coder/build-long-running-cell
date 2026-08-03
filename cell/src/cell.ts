@@ -130,7 +130,30 @@ export class Cell {
     }
   }
 
-  async resume(): Promise<JournalEntry | undefined> {
+  /**
+   * Read the journal to find the most recent run to resume from.
+   *
+   * If a mission id is supplied, the search is scoped to that mission so an
+   * operator can inspect why one particular mission stalled without mixing in
+   * runs from other missions.
+   */
+  async resume(missionId?: string): Promise<JournalEntry | undefined> {
+    if (missionId) {
+      const entries = await this.journal.forMission(missionId);
+      return entries.at(-1);
+    }
     return this.journal.latest();
+  }
+
+  /**
+   * List recorded runs, optionally filtered by result. This is the read-side of
+   * the journal: it lets dashboards, debuggers, and retry policies ask
+   * concrete questions such as "which missions failed verification today?".
+   */
+  async runs(result?: JournalEntry['result']): Promise<JournalEntry[]> {
+    if (result) {
+      return this.journal.byResult(result);
+    }
+    return this.journal.readAll();
   }
 }

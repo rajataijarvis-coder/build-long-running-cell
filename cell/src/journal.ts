@@ -1,7 +1,15 @@
 import { promises as fs } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import type { JournalEntry } from './types.js';
 
+/**
+ * A durable, append-mostly journal of cell runs.
+ *
+ * Each entry records one phase execution for a mission: when it started,
+ * which state it ran in, how it ended, and any notes produced along the
+ * way. The journal is stored as newline-delimited JSON so it is easy to
+ * inspect, diff, and append to without rewriting the whole history.
+ */
 export class ExecutionJournal {
   private readonly path: string;
 
@@ -10,7 +18,7 @@ export class ExecutionJournal {
   }
 
   private async ensureDir(): Promise<void> {
-    await fs.mkdir(this.path.replace('/journal.jsonl', ''), { recursive: true });
+    await fs.mkdir(dirname(this.path), { recursive: true });
   }
 
   async append(entry: JournalEntry): Promise<void> {
@@ -23,8 +31,17 @@ export class ExecutionJournal {
       const raw = await fs.readFile(this.path, 'utf-8');
       return raw
         .split('\n')
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as JournalEntry);
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .map((line, index) => {
+          try {
+            return JSON.parse(line) as JournalEntry;
+          } catch (err) {
+            throw new Error(
+              `Corrupt journal line ${index + 1}: ${(err as Error).message}\n${line}`
+            );
+          }
+        });
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         return [];
@@ -43,6 +60,11 @@ export class ExecutionJournal {
     return entries.filter((e) => e.missionId === missionId);
   }
 
+  async byResult(result: JournalEntry['result']): Promise<JournalEntry[]> {
+    const entries = await this.readAll();
+    return entries.filter((e) => e.result === result);
+  }
+
   async start(missionId: string, state: JournalEntry['state']): Promise<JournalEntry> {
     const entry: JournalEntry = {
       id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -59,9 +81,24 @@ export class ExecutionJournal {
     const entries = await this.readAll();
     const target = entries.find((e) => e.id === runId);
     if (!target) throw new Error(`Run ${runId} not found`);
+
+    // Make finish idempotent: if a run is already closed we keep the first
+    // recorded outcome rather than stamping a new one over it.
+    if (target.finishedAt) return;
+
     target.finishedAt = new Date().toISOString();
     target.result = result;
     if (note) target.notes.push(note);
-    await fs.writeFile(this.path, entries.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf-8');
+
+    // Write to a temporary file in the same directory and rename atomically.
+    // This protects the journal from truncation if the process crashes while
+    // the file is being updated.
+    const tempPath = `${this.path}.tmp`;
+    await fs.writeFile(
+      tempPath,
+      entries.map((e) => JSON.stringify(e)).join('\n') + '\n',
+      'utf-8'
+    );
+    await fs.rename(tempPath, this.path);
   }
 }
