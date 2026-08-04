@@ -2,6 +2,13 @@
 
 - [Course overview](../README.md)
 - [System architecture](ARCHITECTURE.md)
+- [Factory modes: lit vs dark](FACTORY_MODES.md)
+- [Design patterns](DESIGN_PATTERNS.md)
+- [Sequence diagrams](SEQUENCE_DIAGRAMS.md)
+- [Class diagrams](CLASS_DIAGRAMS.md)
+- [Codebase guide](CODEBASE_GUIDE.md)
+- [Data flow](DATA_FLOW.md)
+- [Chapter cross-reference](CHAPTER_CROSS_REFERENCE.md)
 
 ## Part 1 — Foundations
 

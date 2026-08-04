@@ -655,3 +655,15 @@ flowchart LR
     Loop --> Memory
     Cell --> Out
 ```
+
+## Where to read next
+
+- `docs/FACTORY_MODES.md` explains lit vs dark factory concepts and how to configure the cell for either mode.
+- `docs/DESIGN_PATTERNS.md` walks through every design pattern with class diagrams.
+- `docs/SEQUENCE_DIAGRAMS.md` collects all sequence diagrams in one place.
+- `docs/CLASS_DIAGRAMS.md` shows class diagrams for every major module.
+- `docs/CODEBASE_GUIDE.md` is a junior-dev walkthrough of the whole codebase.
+- `docs/DATA_FLOW.md` traces how data moves from request to dashboard.
+- `docs/CHAPTER_CROSS_REFERENCE.md` maps each chapter to the files and concepts it teaches.
+- `docs/TOC.md` shows the chapter-by-chapter path through the course.
+- `chapters/01-cell-concepts/README.md` explains the core mental model.

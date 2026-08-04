@@ -110,6 +110,13 @@ The dashboard reads `CELL_URL` (default `http://localhost:3456`) to talk to the 
 ## Where the docs live
 
 - `docs/ARCHITECTURE.md` — the system architecture and design patterns, explained for junior devs.
+- `docs/FACTORY_MODES.md` — lit vs dark factory concepts, and how to configure the cell for each.
+- `docs/DESIGN_PATTERNS.md` — every design pattern used in the code, with class diagrams.
+- `docs/SEQUENCE_DIAGRAMS.md` — all major flows as sequence diagrams.
+- `docs/CLASS_DIAGRAMS.md` — class diagrams for the main modules.
+- `docs/CODEBASE_GUIDE.md` — a top-to-bottom walkthrough of the codebase for junior devs.
+- `docs/DATA_FLOW.md` — how data moves through the system.
+- `docs/CHAPTER_CROSS_REFERENCE.md` — study guide mapping chapters to files and concepts.
 - `docs/TOC.md` — table of contents and chapter roadmap.
 - `chapters/` — one directory per chapter. Each has a `README.md` and the code it introduces.
 - `cell/src/` — the cell implementation.
