@@ -35,6 +35,7 @@
 - [22 - Human-in-the-loop](../chapters/22-human-in-the-loop/)
 - [23 - Deployment: running 24/7](../chapters/23-deployment/)
 - [24 - Capstone: orchestration](../chapters/24-capstone-orchestration/)
+- [25 - Evaluation harness: measuring and improving the cell](../chapters/25-evaluation-harness/)
 
 ## Status
 
@@ -64,3 +65,4 @@
 | 22 | published |
 | 23 | published |
 | 24 | published |
+| 25 | published |

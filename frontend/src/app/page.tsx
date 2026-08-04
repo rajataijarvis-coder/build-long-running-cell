@@ -5,6 +5,7 @@ import StatusPanel from '@/components/StatusPanel';
 import ObservabilityPanel from '@/components/ObservabilityPanel';
 import PlanPanel from '@/components/PlanPanel';
 import DeploymentPanel from '@/components/DeploymentPanel';
+import EvalPanel from '@/components/EvalPanel';
 import OrchestratorPanel from '@/components/OrchestratorPanel';
 
 interface Status {
@@ -385,6 +386,7 @@ export default function Home() {
       <h1 className="text-3xl font-bold mb-4">Long-Running Cell Dashboard</h1>
 
       <OrchestratorPanel />
+      <EvalPanel />
       <DeploymentPanel />
       <StatusPanel />
       <ObservabilityPanel />

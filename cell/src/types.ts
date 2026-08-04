@@ -310,6 +310,42 @@ export interface CellMemory {
   pendingReviewId?: string;
   /** History of orchestrated end-to-end runs. */
   orchestrationRuns?: OrchestrationRun[];
+  /** History of evaluation runs used to measure cell performance. */
+  evalRuns?: EvalRun[];
+}
+
+export interface EvalTask {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface EvalResult {
+  taskId: string;
+  status: 'passed' | 'failed' | 'error';
+  durationMs: number;
+  /** Score between 0 and 1 derived from the task's success criteria. */
+  score: number;
+  /** Human-readable detail, e.g. command counts or success ratios. */
+  detail?: string;
+  /** For orchestration-backed tasks, the underlying orchestration run id. */
+  runId?: string;
+}
+
+export interface EvalRun {
+  id: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: 'running' | 'done' | 'failed';
+  tasks: EvalResult[];
+  summary: {
+    total: number;
+    passed: number;
+    failed: number;
+    /** Aggregate score across all tasks (0-1). */
+    score: number;
+    durationMs: number;
+  };
 }
 
 export interface OrchestrationRun {
@@ -368,4 +404,6 @@ export interface MetricSnapshot {
   memoryDocumentCount: number;
   /** Number of orchestrator end-to-end runs completed. */
   orchestratorRuns: number;
+  /** Number of evaluation runs completed. */
+  evalRuns: number;
 }

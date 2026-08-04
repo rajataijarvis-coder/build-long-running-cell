@@ -22,6 +22,7 @@ import { Observability } from './observability.js';
 import { HumanInTheLoop } from './hitl.js';
 import { CELL_VERSION } from './version.js';
 import { Orchestrator } from './orchestrator.js';
+import { EvaluationHarness } from './eval.js';
 import type { HITLStatus, HumanReview, JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, observability?: Observability) {
@@ -446,6 +447,30 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
           verificationCommands: [],
         });
         const runs = await orchestrator.list(Number(url.searchParams.get('limit') ?? 20));
+        res.end(JSON.stringify({ ok: true, runs }));
+        return;
+      }
+
+      if (url.pathname === '/eval' && req.method === 'POST') {
+        const body = await readBody();
+        const harness = new EvaluationHarness({
+          basePath: process.cwd(),
+          verificationCommands: [
+            ['npm', ['run', 'lint']],
+            ['npm', ['run', 'build']],
+            ['npm', ['test']],
+          ],
+          observability,
+        });
+        const taskIds = Array.isArray(body.taskIds) ? body.taskIds as string[] : undefined;
+        const run = await harness.run(taskIds);
+        res.end(JSON.stringify({ ok: run.status === 'done', run }));
+        return;
+      }
+
+      if (url.pathname === '/eval/runs') {
+        const harness = new EvaluationHarness({ basePath: process.cwd() });
+        const runs = await harness.list(Number(url.searchParams.get('limit') ?? 20));
         res.end(JSON.stringify({ ok: true, runs }));
         return;
       }
