@@ -44,7 +44,7 @@ The first code we write defines the vocabulary of the cell. These types will tra
 Open `cell/src/types.ts`. In the course repository it already contains the full set of types used by later chapters. For this chapter, focus on the foundational definitions near the top:
 
 ```ts
-export type CellState = 'idle' | 'planning' | 'executing' | 'verifying' | 'reviewing' | 'paused' | 'failed';
+export type CellState = 'idle' | 'planning' | 'executing' | 'verifying' | 'reviewing' | 'paused';
 
 export interface Mission {
   id: string;
@@ -113,14 +113,12 @@ describe('types', () => {
       missions: [],
       progressLog: [],
       decisions: [],
-      proposals: [],
     };
 
     assert.equal(memory.currentState, 'idle');
     assert.deepEqual(memory.missions, []);
     assert.deepEqual(memory.progressLog, []);
     assert.deepEqual(memory.decisions, []);
-    assert.deepEqual(memory.proposals, []);
     assert.equal(memory.currentMissionId, undefined);
   });
 });
