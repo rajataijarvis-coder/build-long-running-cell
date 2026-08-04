@@ -1,5 +1,7 @@
 # Course Issues — Code, Docs, Chapters
 
+**Status:** All issues resolved.
+
 This is a living list of issues found while reviewing the `build-long-running-cell` course holistically. The goal is to fix them one by one, not all at once, so that code, documentation, and chapters stay aligned after each change.
 
 ## How to use this list
