@@ -92,7 +92,7 @@ export class Worktree {
     }
   }
 
-  async status(): Promise<{ clean: boolean; ahead?: number; behind?: number }> {
+  async status(): Promise<{ clean: boolean }> {
     const stdout = await this.git('status', '--porcelain=v1');
     const clean = stdout.trim().length === 0;
     return { clean };
