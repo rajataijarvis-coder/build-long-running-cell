@@ -33,6 +33,8 @@ export interface ServerContext {
   guardrails: Guardrails;
   hitl: HumanInTheLoop;
   memoryStore: MemoryStore;
+  /** Commands used by the cell for verification. The HTTP /verify endpoint must use these so it checks the same gate. */
+  verificationCommands?: [string, string[]][];
 }
 
 export function startServer(cell: Cell, port?: number, budget?: BudgetTracker, observability?: Observability): ReturnType<typeof createServer>;
@@ -58,6 +60,11 @@ export function startServer(
           }),
           hitl: new HumanInTheLoop({ basePath: cellOrContext.basePath }),
           memoryStore: new MemoryStore({ basePath: cellOrContext.basePath }),
+          verificationCommands: [
+            ['npm', ['run', 'lint']],
+            ['npm', ['run', 'build']],
+            ['npm', ['test']],
+          ],
         }
       : cellOrContext;
 
@@ -169,11 +176,14 @@ export function startServer(
       }
 
       if (url.pathname === '/verify' && req.method === 'POST') {
-        const summary = await runVerificationSuite([
-          ['npm', ['run', 'lint']],
-          ['npm', ['run', 'build']],
-          ['npm', ['test']],
-        ], { observability: sharedObservability });
+        const summary = await runVerificationSuite(
+          context.verificationCommands ?? [
+            ['npm', ['run', 'lint']],
+            ['npm', ['run', 'build']],
+            ['npm', ['test']],
+          ],
+          { observability: sharedObservability },
+        );
         res.statusCode = summary.passed ? 200 : 500;
         res.end(JSON.stringify({ ok: summary.passed, summary }));
         return;

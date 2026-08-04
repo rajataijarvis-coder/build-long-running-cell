@@ -57,6 +57,7 @@ const context: ServerContext = {
   guardrails,
   hitl,
   memoryStore,
+  verificationCommands,
 };
 const server = startServer(context, port);
 console.log(`Cell version ${CELL_VERSION} starting on port ${port}`);
