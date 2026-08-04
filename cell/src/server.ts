@@ -21,6 +21,7 @@ import { BudgetTracker } from './budget.js';
 import { Observability } from './observability.js';
 import { HumanInTheLoop } from './hitl.js';
 import { CELL_VERSION } from './version.js';
+import { Orchestrator } from './orchestrator.js';
 import type { HITLStatus, HumanReview, JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, observability?: Observability) {
@@ -409,6 +410,43 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
         });
         const result = await coordinator.coordinate(missions);
         res.end(JSON.stringify({ ok: true, result }));
+        return;
+      }
+
+      if (url.pathname === '/orchestrate' && req.method === 'POST') {
+        const body = await readBody();
+        const goal = String(body.goal ?? '');
+        if (!goal.trim()) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ok: false, error: 'goal is required' }));
+          return;
+        }
+        const orchestrator = new Orchestrator({
+          basePath: process.cwd(),
+          verificationCommands: [
+            ['npm', ['run', 'lint']],
+            ['npm', ['run', 'build']],
+            ['npm', ['test']],
+          ],
+          maxConcurrency: Number(body.maxConcurrency ?? 2),
+          maxRetries: Number(body.maxRetries ?? 2),
+          maxSubMissions: Number(body.maxSubMissions ?? 4),
+          useSpecialists: true,
+          budget,
+          observability,
+        });
+        const run = await orchestrator.run(goal);
+        res.end(JSON.stringify({ ok: run.status === 'done', run }));
+        return;
+      }
+
+      if (url.pathname === '/orchestrator/runs') {
+        const orchestrator = new Orchestrator({
+          basePath: process.cwd(),
+          verificationCommands: [],
+        });
+        const runs = await orchestrator.list(Number(url.searchParams.get('limit') ?? 20));
+        res.end(JSON.stringify({ ok: true, runs }));
         return;
       }
 

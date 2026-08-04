@@ -5,6 +5,7 @@ import StatusPanel from '@/components/StatusPanel';
 import ObservabilityPanel from '@/components/ObservabilityPanel';
 import PlanPanel from '@/components/PlanPanel';
 import DeploymentPanel from '@/components/DeploymentPanel';
+import OrchestratorPanel from '@/components/OrchestratorPanel';
 
 interface Status {
   state: string;
@@ -383,6 +384,7 @@ export default function Home() {
     <main className="p-6 max-w-4xl mx-auto">
       <h1 className="text-3xl font-bold mb-4">Long-Running Cell Dashboard</h1>
 
+      <OrchestratorPanel />
       <DeploymentPanel />
       <StatusPanel />
       <ObservabilityPanel />
@@ -615,6 +617,7 @@ export default function Home() {
               <option value="verify">verify</option>
               <option value="mission">mission</option>
               <option value="lead">lead</option>
+              <option value="orchestrate">orchestrate</option>
             </select>
             <input
               value={taskPayload}

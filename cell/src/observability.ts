@@ -14,7 +14,8 @@ export type MetricCounter =
   | 'scheduledTasksRun'
   | 'guardrailBlocks'
   | 'verificationsRun'
-  | 'memoryDocumentCount';
+  | 'memoryDocumentCount'
+  | 'orchestratorRuns';
 
 export class Observability {
   private readonly statePath: string;
@@ -39,6 +40,7 @@ export class Observability {
       guardrailBlocks: 0,
       verificationsRun: 0,
       memoryDocumentCount: 0,
+      orchestratorRuns: 0,
     };
   }
 

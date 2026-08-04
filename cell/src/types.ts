@@ -66,8 +66,8 @@ export interface ScheduledTask {
   name: string;
   /** Cron expression in local wall-clock time (five-field cron). Example: five-field cron. */
   cron: string;
-  /** One of: queue a single mission, run a lead-engineer goal, or run verification. */
-  action: 'mission' | 'lead' | 'verify';
+  /** One of: queue a single mission, run a lead-engineer goal, run verification, or run a full orchestration. */
+  action: 'mission' | 'lead' | 'verify' | 'orchestrate';
   payload: string;
   timezone?: string;
   /** Whether the scheduler should currently evaluate this task. */
@@ -308,6 +308,22 @@ export interface CellMemory {
   reviews?: HumanReview[];
   /** If the cell is waiting on a review, this is the id of the pending review. */
   pendingReviewId?: string;
+  /** History of orchestrated end-to-end runs. */
+  orchestrationRuns?: OrchestrationRun[];
+}
+
+export interface OrchestrationRun {
+  id: string;
+  goal: string;
+  startedAt: string;
+  finishedAt?: string;
+  status: 'running' | 'done' | 'failed';
+  missions: Array<{ id: string; title: string; status: string }>;
+  merged: string[];
+  rejected: string[];
+  failed: string[];
+  summary?: string;
+  metrics?: MetricSnapshot;
 }
 
 export interface Budget {
@@ -350,4 +366,6 @@ export interface MetricSnapshot {
   verificationsRun: number;
   /** Current memory document count estimate. */
   memoryDocumentCount: number;
+  /** Number of orchestrator end-to-end runs completed. */
+  orchestratorRuns: number;
 }

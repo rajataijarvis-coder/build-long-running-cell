@@ -6,6 +6,7 @@ import { LeadEngineer } from './lead.js';
 import { runVerificationSuite } from './verify.js';
 import { BudgetTracker } from './budget.js';
 import { Observability } from './observability.js';
+import { Orchestrator } from './orchestrator.js';
 
 export interface SchedulerOptions {
   basePath: string;
@@ -279,6 +280,19 @@ export class Scheduler {
           memory: new GitMemory(this.basePath),
         });
         return lead.execute(task.payload);
+      }
+      case 'orchestrate': {
+        const orch = new Orchestrator({
+          basePath: this.basePath,
+          verificationCommands: this.verificationCommands,
+          maxConcurrency: 1,
+          maxRetries: 2,
+          maxSubMissions: 3,
+          useSpecialists: true,
+          budget: this.budget,
+          observability: this.observability,
+        });
+        return orch.run(task.payload);
       }
       case 'verify': {
         const summary = await runVerificationSuite(this.verificationCommands, { stopOnFailure: false });
