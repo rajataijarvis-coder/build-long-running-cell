@@ -125,23 +125,40 @@ export class GitMemory {
 
 ### 3. Git commits as snapshots
 
-The code above writes `memory.json`, but it does not yet commit it. In the full implementation, the cell wraps `save()` with a Git commit. A minimal commit helper looks like this:
+Git commits are not an afterthought in this implementation. `GitMemory.save()` writes `memory.json`, then makes sure `state/` is a Git repository, and commits the file. The commit is silent when there are no real changes, so repeated saves do not spam the history.
 
 ```ts
-import { execSync } from 'child_process';
-
-function commitState(basePath: string, message: string): void {
-  const statePath = join(basePath, 'state');
-  execSync('git add memory.json', { cwd: statePath });
+private ensureRepo(): void {
+  const dir = this.stateDir();
   try {
-    execSync(`git commit -m "${message}" --no-verify`, { cwd: statePath });
+    execSync('git rev-parse --git-dir', { cwd: dir, stdio: 'pipe' });
   } catch {
-    // Nothing to commit: ignore.
+    execSync('git init --quiet', { cwd: dir });
   }
+}
+
+private gitCommit(message: string): void {
+  const dir = this.stateDir();
+  try {
+    execSync('git add memory.json', { cwd: dir });
+    execSync(`git commit -m "${message.replace(/"/g, '\\"')}" --no-verify --quiet`, { cwd: dir });
+  } catch {
+    // No changes to commit; ignore.
+  }
+}
+
+async save(memory: CellMemory, commitMessage?: string): Promise<void> {
+  const path = this.memoryPath();
+  const dir = this.stateDir();
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path, JSON.stringify(memory, null, 2), 'utf-8');
+  this.ensureRepo();
+  const msg = commitMessage ?? `memory: ${memory.currentState}`;
+  this.gitCommit(msg);
 }
 ```
 
-In the actual `cell/src/git-memory.ts` used by the course, the commit step is handled by a higher-level wrapper so the `GitMemory` class stays focused on JSON load/save. The important principle is the same: every meaningful state change becomes a Git commit inside the `state/` directory.
+This means every mission queued, every progress log entry, and every decision is recorded as a Git commit. The commit message defaults to the current cell state, but callers can pass a more specific message. If `memory.json` has not actually changed, the no-op commit is swallowed by the catch block.
 
 ### 4. Add tests for durability and history
 
@@ -212,18 +229,18 @@ describe('GitMemory', () => {
 
 These tests prove the three guarantees that make Git-as-memory reliable: default state, persistence across reloads, and a readable file after a write.
 
-### 5. Why not commit in this simplified chapter?
+### 5. Why Git lives inside `save()`
 
-In the full course repository, `state/` is already a Git repository and commits happen automatically. For your own scratch implementation, initialise `state/` as a Git repository once:
+Some designs separate persistence from versioning: one method writes the JSON file, another method commits it. That separation is fine when the caller is always disciplined enough to call both. In a long-running agent that can crash between any two lines, discipline is not enough. By committing inside `save()`, the durable guarantee is automatic and unconditional.
+
+The first time `save()` runs in a fresh workspace it calls `git init --quiet` inside `state/`. After that, every meaningful change is committed. You can inspect the history exactly like any other repository:
 
 ```bash
 cd cell/state
-git init
-git add memory.json
-git commit -m "Initial memory state"
+git log --oneline
 ```
 
-After that, every `save()` can stage and commit `memory.json`. The cell does not need a database; it needs a versioned file store, and Git is exactly that.
+The cell does not need a database; it needs a versioned file store, and Git is exactly that.
 
 ## Verification
 

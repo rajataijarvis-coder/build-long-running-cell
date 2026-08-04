@@ -1,5 +1,6 @@
 import { promises as fs } from 'fs';
 import { join } from 'path';
+import { execSync } from 'child_process';
 import type { CellMemory, Mission, Decision, LeadRun, FailureRecord } from './types.js';
 
 const DEFAULT_MEMORY: CellMemory = {
@@ -30,10 +31,37 @@ export class GitMemory {
     }
   }
 
-  async save(memory: CellMemory): Promise<void> {
+  private stateDir(): string {
+    return join(this.basePath, 'state');
+  }
+
+  private ensureRepo(): void {
+    const dir = this.stateDir();
+    try {
+      execSync('git rev-parse --git-dir', { cwd: dir, stdio: 'pipe' });
+    } catch {
+      execSync('git init --quiet', { cwd: dir });
+    }
+  }
+
+  private gitCommit(message: string): void {
+    const dir = this.stateDir();
+    try {
+      execSync('git add memory.json', { cwd: dir });
+      execSync(`git commit -m "${message.replace(/"/g, '\\"')}" --no-verify --quiet`, { cwd: dir });
+    } catch {
+      // No changes to commit; ignore.
+    }
+  }
+
+  async save(memory: CellMemory, commitMessage?: string): Promise<void> {
     const path = this.memoryPath();
-    await fs.mkdir(path.replace('/memory.json', ''), { recursive: true });
+    const dir = this.stateDir();
+    await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path, JSON.stringify(memory, null, 2), 'utf-8');
+    this.ensureRepo();
+    const msg = commitMessage ?? `memory: ${memory.currentState}`;
+    this.gitCommit(msg);
   }
 
   async addMission(title: string, description: string): Promise<Mission> {
