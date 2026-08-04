@@ -156,11 +156,13 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 **Problem:** Verification traces are an important feature for regression detection, but the chapter may not explain the full lifecycle or how to read traces in the dashboard.
 
 **Fix:**
-- [ ] Expand the narrative: why traces matter, how they differ from the execution journal.
-- [ ] Add a dashboard panel or endpoint description for viewing traces.
-- [ ] Add an exercise that intentionally creates a flaky mission and shows how the trace reveals it.
+- [x] Expand the narrative: why traces matter, how they differ from the execution journal.
+- [x] Add a dashboard panel or endpoint description for viewing traces.
+- [x] Add an exercise that intentionally creates a flaky mission and shows how the trace reveals it.
 
-**Files:** `chapters/26-verification-traces/README.md`, `cell/src/cell.ts`, `frontend/src/app/page.tsx`
+**Status:** Fixed in commit `0adb67a`. Added a new section explaining how traces differ from the execution journal, documented the `/traces` endpoint and the dashboard `TracePanel`, and added a flaky-mission exercise using the dashboard.
+
+**Files:** `chapters/26-verification-traces/README.md`
 
 ---
 
