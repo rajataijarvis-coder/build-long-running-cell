@@ -1,5 +1,7 @@
 # Sequence Diagrams
 
+> **Last verified against commit:** `HEAD` (after `5864b1d`).
+
 This file shows the major flows in the long-running cell as Mermaid sequence diagrams. Each diagram is meant for a junior developer: it uses real file and function names from the codebase and explains what is happening in plain language.
 
 > **Key idea:** A sequence diagram is like reading a comic strip from top to bottom. Each vertical line is a participant. Each horizontal arrow is a message or action. Time moves downward.
@@ -13,7 +15,7 @@ This is the happiest path: a mission is queued, planned, executed, verified, rev
 Participants:
 
 - **Operator / Dashboard** — the human or UI that starts things.
-- **Cell** (`cell/src/cell.ts`) — the durable state machine.
+- **Cell** (`cell/src/cell.ts`) — the durable state machine; exposes `tick()`, `queueMission()`, `state()`, `currentMission()`, `resume()`, `runs()`, `verificationTraces()`, `getPlanner()`, `buildAccountabilityContract()`, `listAccountability()`.
 - **GitMemory** (`cell/src/git-memory.ts`) — writes `state/memory.json` and commits it.
 - **ExecutionJournal** (`cell/src/journal.ts`) — appends phase runs.
 - **LoopEngine** (`cell/src/loop-engine.ts`) — runs the ReAct inner loop.
@@ -23,7 +25,7 @@ Participants:
 sequenceDiagram
     autonumber
     participant Op as Operator/Dashboard
-    participant Cell as Cell (cell.ts)
+    participant Cell as Cell
     participant Mem as GitMemory
     participant Journal as ExecutionJournal
     participant Loop as LoopEngine
@@ -84,7 +86,7 @@ Inside the `executing` phase, `LoopEngine` repeatedly plans, reasons, acts, obse
 Participants:
 
 - **LoopEngine** (`cell/src/loop-engine.ts`)
-- **Planner** (`cell/src/planner.ts`)
+- **Planner** (`cell/src/planner.ts`) — created via `new Planner({ maxSteps, llm })`; exposed on `Cell.getPlanner()` for the HTTP `/plan` endpoint.
 - **Reasoner** (`cell/src/reasoner.ts`)
 - **Actor** (`cell/src/actor.ts`)
 - **Observer** (`cell/src/observer.ts`)
@@ -145,11 +147,12 @@ Participants:
 - **Dashboard**
 - **LeadEngineer** (`cell/src/lead.ts`)
 - **Coordinator** (`cell/src/coordinator.ts`)
-- **Specialist** (`cell/src/specialist.ts`)
+- **Specialist** (`cell/src/specialist.ts`) — selected by `kindForMission(title)`
 - **CellRunner** (`cell/src/runner.ts`)
 - **Worktree** (`cell/src/worktree.ts`)
 - **Cell** (`cell/src/cell.ts`)
 - **GitMemory**
+- **FailureMemory** (`cell/src/git-memory.ts`) — used by `LeadEngineer` and `Coordinator` to learn from prior failures.
 
 ```mermaid
 sequenceDiagram
@@ -220,6 +223,7 @@ Participants:
 - **Cell** (`cell/src/cell.ts`)
 - **HumanInTheLoop** (`cell/src/hitl.ts`)
 - **GitMemory**
+- **ServerContext** (`cell/src/server.ts`) — carries the *same* `guardrails`, `hitl`, `memoryStore`, `budget`, and `observability` instances to the HTTP server so approvals are visible everywhere.
 - **Dashboard / Operator**
 
 ```mermaid
@@ -282,6 +286,8 @@ Participants:
 - **verify.ts**
 - **MemorySummariser** (`cell/src/summary.ts`)
 - **GitMemory**
+- **FailureMemory**
+- **BudgetTracker / Observability** — shared across orchestrator, lead, and scheduler.
 
 ```mermaid
 sequenceDiagram
@@ -371,7 +377,7 @@ sequenceDiagram
 
 ## 7. Scheduler Tick
 
-The scheduler is an external loop that checks cron tasks and fires the right action.
+The scheduler is an external loop that checks cron tasks and fires the right action. `Scheduler` does not own a timer; an outside caller (cron, `setInterval`, `startSchedulerLoop`, or `AUTO_SCHEDULE=true` in `cell/src/main.ts`) drives `tick()`.
 
 Participants:
 
@@ -379,6 +385,8 @@ Participants:
 - **Scheduler** (`cell/src/scheduler.ts`)
 - **GitMemory**
 - **LeadEngineer / Orchestrator / verify.ts**
+- **BudgetTracker**
+- **Observability** — shared with server and cell.
 
 ```mermaid
 sequenceDiagram
@@ -426,7 +434,17 @@ sequenceDiagram
 
 **What to notice:** The scheduler does not keep its own timer by default. Something else (a cron job, `startSchedulerLoop`, or `AUTO_SCHEDULE=true`) calls `tick()`. This makes the scheduler deterministic and easy to unit test.
 
----
+### Shared services note
+
+The most important recent change is `ServerContext` in `cell/src/server.ts`. It bundles:
+
+- `cell`
+- `basePath`
+- `budget`, `observability`
+- `guardrails`, `hitl`, `memoryStore`
+- `verificationCommands`
+
+Because these services are created once in `main.ts`/`factory.ts` and passed to both `Cell` and `startServer`, a destructive action approved via `/guardrails/approve` is also approved inside the cell loop, and a review resolved via `/reviews/resolve` is seen by `cell.tick()`.
 
 ## How to read these diagrams
 

@@ -1,5 +1,7 @@
 # Class Diagrams
 
+> **Last verified against commit:** `HEAD` (after `5864b1d`).
+
 This file shows the main classes and interfaces in `~/Downloads/projects/build-long-running-cell/` as Mermaid class diagrams. Each diagram focuses on one layer so the relationships stay readable.
 
 > **How to read these diagrams:** A box is a class or interface. An arrow with a hollow triangle means "is a" (inheritance / implements). A plain arrow means "uses" or "has a". A plus sign (`+`) means public, a minus sign (`-`) means private.
@@ -24,7 +26,9 @@ classDiagram
         -BudgetTracker budget
         -Observability observability
         -HumanInTheLoop hitl
+        -AccountabilityStore accountability
         -CellConfig config
+        +basePath: string
         +constructor(config: CellConfig)
         +state() CellState
         +currentMission() Mission
@@ -35,6 +39,9 @@ classDiagram
         +verificationTraces() VerificationTrace[]
         +budgetStatus() BudgetStatus
         +metrics() MetricSnapshot
+        +getPlanner() Planner
+        +buildAccountabilityContract(missionId) AccountabilityContract
+        +listAccountability() AccountabilityContract[]
         -runPhase(mission, state, fn) void
         -recordVerificationTrace(...) void
     }
@@ -47,9 +54,12 @@ classDiagram
         +shellAllowList?: string[]
         +reasoner?: Reasoner
         +reflector?: Reflector
+        +reasonerOptions?: ReasonerOptions
+        +reflectorOptions?: ReflectorOptions
         +retrieval?: RetrievalEngine
         +memoryStore?: MemoryStore
         +guardrails?: GuardrailOptions
+        +guardrailsInstance?: Guardrails
         +budget?: BudgetTracker
         +observability?: Observability
         +llm?: LLMProvider
@@ -113,6 +123,26 @@ classDiagram
         +pending() HumanReview[]
     }
 
+    class ServerContext {
+        <<interface>>
+        +cell: Cell
+        +basePath: string
+        +budget: BudgetTracker
+        +observability: Observability
+        +guardrails: Guardrails
+        +hitl: HumanInTheLoop
+        +memoryStore: MemoryStore
+        +verificationCommands: [string, string[]][]
+    }
+
+    startServer .. ServerContext : receives
+    ServerContext --> Cell : uses
+    ServerContext --> BudgetTracker
+    ServerContext --> Observability
+    ServerContext --> Guardrails
+    ServerContext --> HumanInTheLoop
+    ServerContext --> MemoryStore
+
     Cell --> CellConfig : configured by
     Cell --> GitMemory : owns
     Cell --> ExecutionJournal : owns
@@ -125,6 +155,8 @@ classDiagram
     Cell --> BudgetTracker : owns
     Cell --> Observability : owns
     Cell --> HumanInTheLoop : owns
+    Cell --> AccountabilityStore : owns
+    Cell --> LLMProvider : optional
 ```
 
 ---
@@ -150,6 +182,7 @@ classDiagram
 
     class Planner {
         -PlannerOptions options
+        -LLMProvider? llm
         +plan(missionId, goal, retrievalContext?) Plan
     }
 
@@ -258,6 +291,12 @@ classDiagram
         +loadForMission(missionId) MemoryDocument[]
     }
 
+    class AccountabilityStore {
+        -GitMemory memory
+        +load() AccountabilityContract[]
+        +save(contract) void
+    }
+
     class RetrievalEngine {
         -RetrievalEngineOptions options
         +retrieve(query, documents) RetrievalResult[]
@@ -284,6 +323,7 @@ classDiagram
     FailureMemory --> GitMemory : wraps
     MemoryStore --> GitMemory
     MemoryStore --> ExecutionJournal
+    AccountabilityStore --> GitMemory
     MemorySummariser --> MemoryStore : optional
     SummaryMemory --> GitMemory
     RetrievalEngine .. MemoryDocument : searches
@@ -336,6 +376,9 @@ classDiagram
 
     class Cell {
         +tick() void
+        +getPlanner() Planner
+        +buildAccountabilityContract(missionId) AccountabilityContract
+        +listAccountability() AccountabilityContract[]
     }
 
     class kindForMission {
@@ -396,17 +439,25 @@ classDiagram
         +pending() HumanReview[]
     }
 
-    class HumanReview {
-        +id: string
-        +missionId: string
-        +stepId: string
-        +status: HITLStatus
-        +action: object
-        +reason: string
-        +requestedAt: string
-        +resolvedAt?: string
-        +feedback?: string
+    class ServerContext {
+        <<interface>>
+        +cell: Cell
+        +basePath: string
+        +budget: BudgetTracker
+        +observability: Observability
+        +guardrails: Guardrails
+        +hitl: HumanInTheLoop
+        +memoryStore: MemoryStore
+        +verificationCommands: [string, string[]][]
     }
+
+    startServer .. ServerContext : receives
+    ServerContext --> Cell : uses
+    ServerContext --> BudgetTracker
+    ServerContext --> Observability
+    ServerContext --> Guardrails
+    ServerContext --> HumanInTheLoop
+    ServerContext --> MemoryStore
 
     Guardrails --> SafetyRule : uses
     GuardedTool --> Guardrails : wraps
@@ -546,6 +597,10 @@ The dashboard is a Next.js app that polls the cell server through frontend API r
 classDiagram
     class Home {
         +page.tsx
+    }
+
+    class cellFetch {
+        +cellFetch(path, options) Promise~Response~
     }
 
     class StatusPanel {
