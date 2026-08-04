@@ -60,7 +60,7 @@
 | 18 | published |
 | 19 | published |
 | 20 | published |
-| 21 | planned |
+| 21 | published |
 | 22 | planned |
 | 23 | planned |
 | 24 | planned |

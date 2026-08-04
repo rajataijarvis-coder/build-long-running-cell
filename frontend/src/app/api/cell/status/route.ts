@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
-
-const CELL_URL = process.env.CELL_URL ?? 'http://localhost:3456';
+import { cellFetch } from '@/lib/cell';
 
 export async function GET() {
   try {
-    const res = await fetch(`${CELL_URL}/status`, { cache: 'no-store' });
-    const data = await res.json();
+    const { data } = await cellFetch('/status');
     return NextResponse.json(data);
   } catch (err) {
-    return NextResponse.json({ state: 'offline', error: (err as Error).message }, { status: 503 });
+    return NextResponse.json(
+      { state: 'offline', error: (err as Error).message },
+      { status: 503 }
+    );
   }
 }

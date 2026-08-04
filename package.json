@@ -6,6 +6,7 @@
   "scripts": {
     "verify:cell": "cd cell && npm run verify",
     "build:frontend": "cd frontend && npm run build",
+    "verify": "npm run verify:cell && npm run build:frontend",
     "publish": "node scripts/node_modules/.bin/tsx scripts/publish-chapter.ts"
   }
 }

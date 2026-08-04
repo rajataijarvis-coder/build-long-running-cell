@@ -1,24 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import StatusPanel from '@/components/StatusPanel';
+import ObservabilityPanel from '@/components/ObservabilityPanel';
+import PlanPanel from '@/components/PlanPanel';
 
 interface Status {
   state: string;
   mission?: { id: string; title: string; status: string };
-}
-
-interface PlanStep {
-  id: string;
-  description: string;
-  tool?: string;
-  input?: string;
-}
-
-interface Plan {
-  missionId: string;
-  goal: string;
-  steps: PlanStep[];
-  reasoning: string;
 }
 
 interface ReviewResult {
@@ -98,34 +87,9 @@ interface GuardrailCheck {
   note: string;
 }
 
-interface BudgetState {
-  tokenLimit: number;
-  costLimit: number;
-  elapsedMsLimit: number;
-  currentTokens: number;
-  currentCost: number;
-  elapsedMs: number;
-  currency: string;
-  costPer1kTokens: number;
-  lastUpdatedAt: string;
-}
-
-interface MetricState {
-  timestamp: string;
-  ticks: number;
-  missionsCompleted: number;
-  missionsFailed: number;
-  leadRuns: number;
-  scheduledTasksRun: number;
-  guardrailBlocks: number;
-  verificationsRun: number;
-  memoryDocumentCount: number;
-}
-
 export default function Home() {
   const [status, setStatus] = useState<Status | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
-  const [plan, setPlan] = useState<Plan | null>(null);
   const [subagentTask, setSubagentTask] = useState('verify the project');
   const [subagentResult, setSubagentResult] = useState<ReviewResult | null>(null);
   const [memoryQuery, setMemoryQuery] = useState('timeout failure');
@@ -145,11 +109,6 @@ export default function Home() {
   const [guardInput, setGuardInput] = useState('');
   const [guardTool, setGuardTool] = useState('shell');
   const [guardResult, setGuardResult] = useState<GuardrailCheck | null>(null);
-  const [budget, setBudget] = useState<BudgetState | null>(null);
-  const [budgetTokenLimit, setBudgetTokenLimit] = useState('0');
-  const [budgetCostLimit, setBudgetCostLimit] = useState('0');
-  const [budgetRuntimeLimit, setBudgetRuntimeLimit] = useState('0');
-  const [metrics, setMetrics] = useState<{ health: string; metrics: MetricState } | null>(null);
 
   async function checkGuardrails() {
     setLogs((l) => [...l, `Checking guardrails for ${guardTool}: ${guardInput}`]);
@@ -167,76 +126,6 @@ export default function Home() {
     }
   }
 
-  async function fetchBudget() {
-    const res = await fetch('/api/cell/budget', { cache: 'no-store' });
-    const data = await res.json();
-    if (data.ok && data.budget) {
-      setBudget(data.budget);
-      setBudgetTokenLimit(String(data.budget.tokenLimit));
-      setBudgetCostLimit(String(data.budget.costLimit));
-      setBudgetRuntimeLimit(String(data.budget.elapsedMsLimit));
-    }
-  }
-
-  async function updateBudget() {
-    setLogs((l) => [...l, 'Updating budget limits...']);
-    const res = await fetch('/api/cell/budget', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tokenLimit: Number(budgetTokenLimit),
-        costLimit: Number(budgetCostLimit),
-        elapsedMsLimit: Number(budgetRuntimeLimit),
-      }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      setBudget(data.budget);
-      setLogs((l) => [...l, 'Budget limits updated']);
-    } else {
-      setLogs((l) => [...l, `Budget update failed: ${data.error ?? 'unknown'}`]);
-    }
-  }
-
-  async function resetBudget() {
-    setLogs((l) => [...l, 'Resetting budget counters...']);
-    const res = await fetch('/api/cell/budget', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reset: true }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      setBudget(data.budget);
-      setLogs((l) => [...l, 'Budget counters reset']);
-    } else {
-      setLogs((l) => [...l, `Budget reset failed: ${data.error ?? 'unknown'}`]);
-    }
-  }
-
-  async function fetchMetrics() {
-    const res = await fetch('/api/cell/metrics', { cache: 'no-store' });
-    const data = await res.json();
-    if (data.ok) {
-      setMetrics({ health: data.health, metrics: data.metrics });
-      setLogs((l) => [...l, `Metrics loaded (health: ${data.health})`]);
-    } else {
-      setLogs((l) => [...l, `Metrics fetch failed: ${data.error ?? 'unknown'}`]);
-    }
-  }
-
-  async function resetMetrics() {
-    setLogs((l) => [...l, 'Resetting metrics...']);
-    const res = await fetch('/api/cell/metrics', { method: 'POST', cache: 'no-store' });
-    const data = await res.json();
-    if (data.ok) {
-      setMetrics({ health: 'healthy', metrics: data.metrics });
-      setLogs((l) => [...l, 'Metrics reset']);
-    } else {
-      setLogs((l) => [...l, `Metrics reset failed: ${data.error ?? 'unknown'}`]);
-    }
-  }
-
   async function fetchStatus() {
     const res = await fetch('/api/cell/status');
     const data = await res.json();
@@ -251,22 +140,11 @@ export default function Home() {
     await fetchStatus();
   }
 
-  async function fetchPlan() {
-    if (!status?.mission) return;
-    setLogs((l) => [...l, 'Fetching plan...']);
-    const res = await fetch('/api/cell/plan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ missionId: status.mission.id, goal: status.mission.title }),
-    });
-    const data = await res.json();
-    if (data.ok && data.plan) {
-      setPlan(data.plan);
-      setLogs((l) => [...l, `Plan loaded: ${data.plan.steps.length} steps`]);
-    } else {
-      setLogs((l) => [...l, `Plan failed: ${data.error ?? 'unknown'}`]);
-    }
-  }
+  useEffect(() => {
+    fetchStatus();
+    const id = setInterval(fetchStatus, 3000);
+    return () => clearInterval(id);
+  }, []);
 
   async function runSubagentCoordinate() {
     setLogs((l) => [...l, `Coordinating subagents for: ${subagentTask}`]);
@@ -446,20 +324,13 @@ export default function Home() {
     }
   }
 
-  useEffect(() => {
-    fetchStatus();
-    fetchBudget();
-    fetchMetrics();
-    const id = setInterval(() => {
-      fetchStatus();
-      fetchMetrics();
-    }, 3000);
-    return () => clearInterval(id);
-  }, []);
-
   return (
     <main className="p-6 max-w-4xl mx-auto">
       <h1 className="text-3xl font-bold mb-4">Long-Running Cell Dashboard</h1>
+
+      <StatusPanel />
+      <ObservabilityPanel />
+      <PlanPanel status={status} />
 
       <section className="rounded-lg border border-slate-700 p-4 mb-6">
         <h2 className="text-xl font-semibold mb-2">Safety & Guardrails</h2>
@@ -497,139 +368,6 @@ export default function Home() {
           </div>
         )}
       </section>
-
-      <section className="rounded-lg border border-slate-700 p-4 mb-6">
-        <h2 className="text-xl font-semibold mb-2">Budget, Cost & Observability</h2>
-        <p className="text-sm text-slate-400 mb-3">
-          Cap token use, estimated cost, and runtime. Observe health counters so you know when the cell is busy or failing.
-        </p>
-
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          <input
-            value={budgetTokenLimit}
-            onChange={(e) => setBudgetTokenLimit(e.target.value)}
-            placeholder="Token limit (0 = unlimited)"
-            className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
-          />
-          <input
-            value={budgetCostLimit}
-            onChange={(e) => setBudgetCostLimit(e.target.value)}
-            placeholder="Cost limit (0 = unlimited)"
-            className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
-          />
-          <input
-            value={budgetRuntimeLimit}
-            onChange={(e) => setBudgetRuntimeLimit(e.target.value)}
-            placeholder="Runtime ms limit (0 = unlimited)"
-            className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
-          />
-        </div>
-        <div className="flex gap-2 mb-4">
-          <button onClick={updateBudget} className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 transition">
-            Set Limits
-          </button>
-          <button onClick={resetBudget} className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition">
-            Reset Counters
-          </button>
-          <button onClick={fetchMetrics} className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 transition">
-            Load Metrics
-          </button>
-          <button onClick={resetMetrics} className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition">
-            Reset Metrics
-          </button>
-        </div>
-
-        {budget && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm mb-4">
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Tokens</p>
-              <p className="font-mono">{budget.currentTokens.toLocaleString()} / {budget.tokenLimit > 0 ? budget.tokenLimit.toLocaleString() : '∞'}</p>
-            </div>
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Cost</p>
-              <p className="font-mono">{budget.currentCost.toFixed(4)} / {budget.costLimit > 0 ? budget.costLimit.toFixed(4) : '∞'} {budget.currency}</p>
-            </div>
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Runtime</p>
-              <p className="font-mono">{budget.elapsedMs.toLocaleString()} / {budget.elapsedMsLimit > 0 ? budget.elapsedMsLimit.toLocaleString() : '∞'} ms</p>
-            </div>
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Cost/1k tokens</p>
-              <p className="font-mono">{budget.costPer1kTokens} {budget.currency}</p>
-            </div>
-          </div>
-        )}
-
-        {metrics && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-            <div className={`rounded p-2 ${metrics.health === 'healthy' ? 'bg-emerald-900/30 text-emerald-300' : 'bg-yellow-900/30 text-yellow-300'}`}>
-              <p className="opacity-80">Health</p>
-              <p className="font-semibold capitalize">{metrics.health}</p>
-            </div>
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Ticks</p>
-              <p className="font-mono">{metrics.metrics.ticks}</p>
-            </div>
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Completed</p>
-              <p className="font-mono text-emerald-400">{metrics.metrics.missionsCompleted}</p>
-            </div>
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Failed</p>
-              <p className="font-mono text-rose-400">{metrics.metrics.missionsFailed}</p>
-            </div>
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Lead runs</p>
-              <p className="font-mono">{metrics.metrics.leadRuns}</p>
-            </div>
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Scheduled</p>
-              <p className="font-mono">{metrics.metrics.scheduledTasksRun}</p>
-            </div>
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Guardrail blocks</p>
-              <p className="font-mono text-rose-400">{metrics.metrics.guardrailBlocks}</p>
-            </div>
-            <div className="bg-slate-900 rounded p-2">
-              <p className="text-slate-500">Verifications</p>
-              <p className="font-mono">{metrics.metrics.verificationsRun}</p>
-            </div>
-          </div>
-        )}
-      </section>
-
-      <section className="rounded-lg border border-slate-700 p-4 mb-6">
-        <h2 className="text-xl font-semibold mb-2">Status</h2>
-        {status ? (
-          <div className="space-y-1">
-            <p>State: <span className="font-mono text-emerald-400">{status.state}</span></p>
-            <p>Mission: {status.mission ? `${status.mission.title} (${status.mission.status})` : 'none'}</p>
-          </div>
-        ) : (
-          <p>Loading...</p>
-        )}
-      </section>
-
-      <div className="flex gap-3 mb-6">
-        <button
-          onClick={tick}
-          className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 transition"
-        >
-          Tick
-        </button>
-        <button
-          onClick={fetchStatus}
-          className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition"
-        >
-          Refresh
-        </button>
-        <button
-          onClick={fetchPlan}
-          className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 transition"
-        >
-          Show Plan
-        </button>
-      </div>
 
       <section className="rounded-lg border border-slate-700 p-4 mb-6">
         <h2 className="text-xl font-semibold mb-2">Maker / Checker Subagents</h2>
@@ -914,21 +652,6 @@ export default function Home() {
           </div>
         )}
       </section>
-
-      {plan && (
-        <section className="rounded-lg border border-slate-700 p-4 mb-6">
-          <h2 className="text-xl font-semibold mb-2">Current Plan</h2>
-          <p className="text-sm text-slate-400 mb-2">{plan.reasoning}</p>
-          <ol className="list-decimal list-inside space-y-1 text-sm">
-            {plan.steps.map((step) => (
-              <li key={step.id}>
-                {step.description}
-                {step.tool && <span className="text-slate-400 ml-2">({step.tool}: {step.input})</span>}
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
 
       <section className="rounded-lg border border-slate-700 p-4">
         <h2 className="text-xl font-semibold mb-2">Event Log</h2>
