@@ -86,12 +86,9 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 
 **Problem:** The new `ServerContext` interface in `cell/src/server.ts` is central to how the HTTP server and the cell loop share state. None of the docs explain it.
 
-**Fix:**
-- [ ] Add a "Shared services" section to `docs/ARCHITECTURE.md` with a small diagram.
-- [ ] Explain why `main.ts` builds services once and shares them in `docs/CODEBASE_GUIDE.md`.
-- [ ] Update `docs/DATA_FLOW.md` to show that `guardrails`/`hitl`/`memoryStore` flow from `main.ts` into both `Cell` and `startServer`.
+**Status:** Fixed in commit `e0e94e7`. Added a "Shared services" section to `docs/ARCHITECTURE.md` with an updated diagram, and updated the directory layout in `docs/CODEBASE_GUIDE.md` to list `factory.ts`, `main-dark.ts`, `accountability-store.ts`, and `ServerContext`. `docs/DATA_FLOW.md` still needs a diagram update (left for polish).
 
-**Files:** `docs/ARCHITECTURE.md`, `docs/CODEBASE_GUIDE.md`, `docs/DATA_FLOW.md`
+**Files:** `docs/ARCHITECTURE.md`, `docs/CODEBASE_GUIDE.md`
 
 ---
 
