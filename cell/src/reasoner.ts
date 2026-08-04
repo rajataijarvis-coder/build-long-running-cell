@@ -20,13 +20,14 @@ export class Reasoner {
     plan: Plan,
     priorThought: Thought | undefined,
     priorObservation: Observation | undefined,
-    context: string
+    context: string,
+    retrievalContext?: string
   ): Thought {
     const stepNumber = priorThought ? this.stepIndexFromId(plan, priorThought.stepId) + 2 : 1;
     const step = this.selectStep(plan, stepNumber, priorObservation);
     const tool = this.pickTool(step, priorObservation);
 
-    const thoughtText = this.formulateThought(step, priorObservation, context, tool);
+    const thoughtText = this.formulateThought(step, priorObservation, context, tool, retrievalContext);
     const action: Action = {
       stepId: step.id,
       tool,
@@ -110,12 +111,16 @@ export class Reasoner {
     step: PlanStep,
     priorObservation: Observation | undefined,
     context: string,
-    tool: string
+    tool: string,
+    retrievalContext?: string
   ): string {
     const registryNote = this.registry
       ? `\nAvailable tools:\n${this.registry.descriptions()}`
       : '';
-    const base = `Thought: ${step.description}. I will use ${tool}(${step.input ?? ''}).${registryNote}`;
+    const memoryNote = retrievalContext
+      ? `\nRelevant memory:\n${retrievalContext}`
+      : '';
+    const base = `Thought: ${step.description}. I will use ${tool}(${step.input ?? ''}).${registryNote}${memoryNote}`;
     if (!priorObservation) return `${base}\nContext: ${context}`;
     return `${base}\nPrevious observation was ${priorObservation.success ? 'successful' : 'unsuccessful'}: ${priorObservation.note ?? priorObservation.output}.`;
   }

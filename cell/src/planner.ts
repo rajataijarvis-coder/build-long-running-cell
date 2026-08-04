@@ -7,14 +7,15 @@ export interface PlannerOptions {
 export class Planner {
   constructor(private readonly options: PlannerOptions = {}) {}
 
-  async plan(missionId: string, goal: string): Promise<Plan> {
+  async plan(missionId: string, goal: string, retrievalContext?: string): Promise<Plan> {
     const maxSteps = this.options.maxSteps ?? 5;
     const steps: PlanStep[] = [];
 
     // A lightweight rule-based planner. It looks for keywords in the goal
-    // and emits a small ordered plan. In a real cell this would be an LLM
-    // prompt; the important part is that the output is a typed Plan.
-    const lower = goal.toLowerCase();
+    // and emitted retrieval context and produces a small ordered plan. In a
+    // real cell this would be an LLM prompt; the important part is that the
+    // output is a typed Plan that can be enriched by retrieved memory.
+    const lower = `${goal} ${retrievalContext ?? ''}`.toLowerCase();
 
     if (lower.includes('verify') || lower.includes('test') || lower.includes('lint')) {
       steps.push({ id: 'step-1', description: 'Run the verification suite', tool: 'shell', input: 'npm run verify' });
@@ -46,7 +47,9 @@ export class Planner {
       missionId,
       goal,
       steps: steps.slice(0, maxSteps),
-      reasoning: `Derived ${steps.length} steps from goal keywords: ${goal}`,
+      reasoning: retrievalContext
+        ? `Derived ${steps.length} steps from goal keywords and retrieved memory:\n${retrievalContext}`
+        : `Derived ${steps.length} steps from goal keywords: ${goal}`,
     };
   }
 }

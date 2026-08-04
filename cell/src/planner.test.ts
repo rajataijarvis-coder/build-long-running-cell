@@ -23,4 +23,10 @@ describe('Planner', () => {
     const plan = await planner.plan('mission-3', 'Do many things including verify, create, read, inspect');
     assert.equal(plan.steps.length, 2);
   });
+
+  it('includes retrieval context in plan reasoning', async () => {
+    const planner = new Planner({ maxSteps: 3 });
+    const plan = await planner.plan('mission-4', 'fix the bug', 'Previous fix used edit_file on src/main.ts.');
+    assert.match(plan.reasoning, /retrieved memory/);
+  });
 });

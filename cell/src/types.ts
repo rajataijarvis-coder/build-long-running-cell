@@ -190,3 +190,17 @@ export interface VerificationSummary {
   passed: boolean;
   results: VerificationResult[];
 }
+
+export interface MemoryDocument {
+  id: string;
+  kind: 'mission' | 'decision' | 'proposal' | 'journal' | 'progress';
+  missionId?: string;
+  text: string;
+  timestamp: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface RetrievalResult {
+  document: MemoryDocument;
+  score: number;
+}

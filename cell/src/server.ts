@@ -9,6 +9,8 @@ import { Reflector } from './reflector.js';
 import { ToolRegistryImpl, ShellTool } from './tools.js';
 import { MakerSubAgent, CheckerSubAgent } from './subagent.js';
 import { CellNetwork } from './network.js';
+import { MemoryStore } from './memory-store.js';
+import { RetrievalEngine } from './retrieval.js';
 import type { JournalEntry } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -80,9 +82,9 @@ export function startServer(cell: Cell, port = 3456) {
       }
 
       if (url.pathname === '/plan' && req.method === 'POST') {
-        const { missionId, goal } = await readBody();
+        const { missionId, goal, retrievalContext } = await readBody();
         const planner = new Planner();
-        const plan = await planner.plan(String(missionId), String(goal));
+        const plan = await planner.plan(String(missionId), String(goal), retrievalContext ? String(retrievalContext) : undefined);
         res.end(JSON.stringify({ ok: true, plan }));
         return;
       }
@@ -170,6 +172,35 @@ export function startServer(cell: Cell, port = 3456) {
         });
         const result = await network.run(String(missionId ?? 'coordinate'), String(task));
         res.end(JSON.stringify({ ok: result.approved, result }));
+        return;
+      }
+
+      if (url.pathname === '/memory' || (url.pathname === '/retrieve' && req.method === 'POST')) {
+        let query: string | undefined;
+        let kind: string | undefined;
+        let missionId: string | undefined;
+        let topK = 5;
+
+        if (req.method === 'POST') {
+          const body = await readBody();
+          query = body.query !== undefined ? String(body.query) : undefined;
+          kind = body.kind !== undefined ? String(body.kind) : undefined;
+          missionId = body.missionId !== undefined ? String(body.missionId) : undefined;
+          topK = Number(body.topK ?? 5);
+        } else {
+          query = url.searchParams.get('query') ?? undefined;
+          kind = url.searchParams.get('kind') ?? undefined;
+          missionId = url.searchParams.get('missionId') ?? undefined;
+          topK = Number(url.searchParams.get('topK') ?? 5);
+        }
+
+        const store = new MemoryStore({ basePath: process.cwd() });
+        const engine = new RetrievalEngine({ topK });
+        let docs = await store.loadAll();
+        if (kind) docs = docs.filter((d) => d.kind === kind);
+        if (missionId) docs = docs.filter((d) => d.missionId === missionId);
+        const results = query ? engine.retrieve(query, docs) : docs.map((d) => ({ document: d, score: 1 }));
+        res.end(JSON.stringify({ ok: true, query, count: results.length, results }));
         return;
       }
 

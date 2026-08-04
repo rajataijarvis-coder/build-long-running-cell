@@ -6,6 +6,8 @@ import { Planner } from './planner.js';
 import { ShellTool, ReadFileTool, EditFileTool, VerifyTool, ToolRegistryImpl } from './tools.js';
 import { Reasoner } from './reasoner.js';
 import { Reflector } from './reflector.js';
+import { MemoryStore } from './memory-store.js';
+import { RetrievalEngine } from './retrieval.js';
 import type { CellState, JournalEntry, Mission, Tool, ToolRegistry, ReasonerOptions, ReflectorOptions } from './types.js';
 
 export interface CellConfig {
@@ -18,6 +20,8 @@ export interface CellConfig {
   reflector?: Reflector;
   reasonerOptions?: ReasonerOptions;
   reflectorOptions?: ReflectorOptions;
+  retrieval?: RetrievalEngine;
+  memoryStore?: MemoryStore;
 }
 
 export class Cell {
@@ -28,6 +32,8 @@ export class Cell {
   private config: CellConfig;
   private reasoner: Reasoner;
   private reflector: Reflector;
+  private memoryStore: MemoryStore;
+  private retrieval: RetrievalEngine;
 
   constructor(config: CellConfig) {
     this.config = config;
@@ -46,6 +52,9 @@ export class Cell {
 
     this.reasoner = config.reasoner ?? new Reasoner(config.reasonerOptions ?? { maxSteps: config.maxRetries }, defaultRegistry);
     this.reflector = config.reflector ?? new Reflector(config.reflectorOptions ?? { maxAttempts: config.maxRetries });
+
+    this.memoryStore = config.memoryStore ?? new MemoryStore({ basePath: config.basePath });
+    this.retrieval = config.retrieval ?? new RetrievalEngine({ topK: 5 });
 
     this.loopEngine = new LoopEngine(
       customTools,
@@ -108,8 +117,16 @@ export class Cell {
       switch (mem.currentState) {
         case 'planning':
           await this.runPhase(mission, 'planning', async () => {
-            const plan = await this.planner.plan(mission.id, mission.description);
+            const allDocs = await this.memoryStore.loadAll();
+            const relevant = this.retrieval.retrieve(mission.description, allDocs);
+            const retrievalContext = this.retrieval.formatContext(relevant);
+            const plan = await this.planner.plan(mission.id, mission.description, retrievalContext);
             mem.currentPlan = plan;
+            await this.memory.recordDecision(
+              `Mission ${mission.id}`,
+              'Retrieved context',
+              `${relevant.length} documents scored for planning`
+            );
             await this.memory.recordDecision(
               `Mission ${mission.id}`,
               'Plan generated',
@@ -150,11 +167,17 @@ export class Cell {
               await this.memory.save(mem);
             };
 
+            const missionDocs = await this.memoryStore.loadForMission(mission.id);
+            const retrievalContext = this.retrieval.formatContext(
+              this.retrieval.retrieve(mission.description, missionDocs)
+            );
+
             const loopResult = await this.loopEngine.run(
               mission.id,
               mission.description,
               checkpoint,
-              onCheckpoint
+              onCheckpoint,
+              retrievalContext
             );
             await this.memory.logProgress(
               `Executed mission ${mission.id}: ${loopResult.iterations.length} reasoning loop iterations, success=${loopResult.success}`

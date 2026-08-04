@@ -32,12 +32,24 @@ interface ReviewResult {
   error?: string;
 }
 
+interface MemoryResult {
+  document: {
+    id: string;
+    kind: string;
+    missionId?: string;
+    text: string;
+  };
+  score: number;
+}
+
 export default function Home() {
   const [status, setStatus] = useState<Status | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [subagentTask, setSubagentTask] = useState('verify the project');
   const [subagentResult, setSubagentResult] = useState<ReviewResult | null>(null);
+  const [memoryQuery, setMemoryQuery] = useState('timeout failure');
+  const [memoryResults, setMemoryResults] = useState<MemoryResult[]>([]);
 
   async function fetchStatus() {
     const res = await fetch('/api/cell/status');
@@ -88,6 +100,19 @@ export default function Home() {
       setLogs((l) => [...l, `Subagents approved after ${data.result.rounds} round(s)`]);
     } else {
       setLogs((l) => [...l, `Subagents did not approve: ${data.result?.error ?? data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function searchMemory() {
+    setLogs((l) => [...l, `Searching memory for: ${memoryQuery}`]);
+    const params = new URLSearchParams({ query: memoryQuery, topK: '5' });
+    const res = await fetch(`/api/cell/memory?${params.toString()}`, { cache: 'no-store' });
+    const data = await res.json();
+    if (data.ok && data.results) {
+      setMemoryResults(data.results);
+      setLogs((l) => [...l, `Memory returned ${data.results.length} result(s)`]);
+    } else {
+      setLogs((l) => [...l, `Memory search failed: ${data.error ?? 'unknown'}`]);
     }
   }
 
@@ -173,6 +198,39 @@ export default function Home() {
             {subagentResult.error && (
               <p className="text-rose-400">{subagentResult.error}</p>
             )}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-slate-700 p-4 mb-6">
+        <h2 className="text-xl font-semibold mb-2">Memory & Retrieval</h2>
+        <p className="text-sm text-slate-400 mb-3">
+          Query the cell&apos;s durable memory for missions, decisions, proposals, journal entries, and progress logs.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <input
+            value={memoryQuery}
+            onChange={(e) => setMemoryQuery(e.target.value)}
+            placeholder="Search memory..."
+            className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1"
+          />
+          <button
+            onClick={searchMemory}
+            className="px-4 py-2 rounded bg-amber-600 hover:bg-amber-500 transition"
+          >
+            Search
+          </button>
+        </div>
+        {memoryResults.length > 0 && (
+          <div className="bg-slate-900 rounded p-3 text-sm space-y-2 max-h-60 overflow-auto">
+            {memoryResults.map((r, i) => (
+              <div key={i} className="border-b border-slate-800 last:border-0 pb-2 last:pb-0">
+                <p className="text-amber-400">
+                  {r.document.kind}:{r.document.id} (score: {r.score.toFixed(3)})
+                </p>
+                <p className="text-slate-300 whitespace-pre-wrap">{r.document.text}</p>
+              </div>
+            ))}
           </div>
         )}
       </section>
