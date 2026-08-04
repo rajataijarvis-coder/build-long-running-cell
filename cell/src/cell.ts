@@ -226,6 +226,7 @@ export class Cell {
       if (review) {
         if (review.status === 'approved') {
           mem.pendingReviewId = undefined;
+          mem.currentState = 'executing';
           await this.memory.save(mem);
           await this.memory.logProgress(`Review ${review.id} approved; resuming mission ${mission?.id ?? 'unknown'}`);
         } else if (review.status === 'rejected' || review.status === 'revised') {

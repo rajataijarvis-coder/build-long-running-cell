@@ -1,14 +1,17 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'fs';
+import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import type { Server } from 'http';
 import { Cell } from './cell.js';
-import { startServer } from './server.js';
+import { startServer, type ServerContext } from './server.js';
 import { Guardrails } from './guardrails.js';
 import { HumanInTheLoop } from './hitl.js';
+import { BudgetTracker } from './budget.js';
+import { Observability } from './observability.js';
 import { MemoryStore } from './memory-store.js';
+import { RetrievalEngine } from './retrieval.js';
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), 'cell-server-integration-'));
@@ -30,53 +33,94 @@ async function listen(server: Server): Promise<{ url: string; close: () => Promi
   });
 }
 
+/**
+ * POST JSON to a URL and return the parsed response.
+ */
+async function postJson(url: string, body: Record<string, unknown>): Promise<unknown> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json()) as Record<string, unknown>;
+  if (!res.ok) {
+    throw new Error(`POST ${url} failed (${res.status}): ${JSON.stringify(data)}`);
+  }
+  return data;
+}
+
+/**
+ * GET a URL and return the parsed response.
+ */
+async function getJson(url: string): Promise<unknown> {
+  const res = await fetch(url);
+  const data = (await res.json()) as Record<string, unknown>;
+  if (!res.ok) {
+    throw new Error(`GET ${url} failed (${res.status}): ${JSON.stringify(data)}`);
+  }
+  return data;
+}
+
+/**
+ * Build a ServerContext with shared services so we can prove the HTTP server
+ * and the cell loop see the exact same guardrails / HITL state.
+ */
+function buildSharedContext(basePath: string): ServerContext {
+  const budget = new BudgetTracker({ basePath });
+  const observability = new Observability({ basePath });
+  const guardrails = new Guardrails({
+    workspacePath: basePath,
+    defaultAllowList: ['npm', 'node', 'echo', 'ls'],
+    requireApprovalForDestructive: true,
+    approvedDestructive: new Set<string>(),
+    observability,
+  });
+  const hitl = new HumanInTheLoop({
+    basePath,
+    requireApprovalForTools: ['shell'],
+    requireApprovalForInput: [],
+    requireApprovalForProtectedFiles: false,
+    protectedPatterns: [],
+  });
+  const memoryStore = new MemoryStore({ basePath });
+  const retrieval = new RetrievalEngine({ topK: 5 });
+
+  const cell = new Cell({
+    basePath,
+    verificationCommands: [],
+    maxRetries: 1,
+    budget,
+    observability,
+    guardrailsInstance: guardrails,
+    hitl,
+    memoryStore,
+    retrieval,
+  });
+
+  return {
+    cell,
+    basePath,
+    budget,
+    observability,
+    guardrails,
+    hitl,
+    memoryStore,
+    verificationCommands: [],
+  };
+}
+
 describe('Server + Cell shared services', () => {
   let basePath: string;
-  let guardrails: Guardrails;
-  let hitl: HumanInTheLoop;
-  let memoryStore: MemoryStore;
-  let cell: Cell;
+  let context: ServerContext;
   let server: Server;
   let url: string;
   let close: () => Promise<void>;
 
   beforeEach(async () => {
     basePath = makeTmpDir();
-    guardrails = new Guardrails({
-      workspacePath: basePath,
-      defaultAllowList: ['echo'],
-      requireApprovalForDestructive: true,
-      approvedDestructive: new Set<string>(),
-    });
-    hitl = new HumanInTheLoop({
-      basePath,
-      requireApprovalForTools: ['delete_file'],
-      requireApprovalForInput: ['rm '],
-    });
-    memoryStore = new MemoryStore({ basePath });
-
-    cell = new Cell({
-      basePath,
-      verificationCommands: [],
-      maxRetries: 1,
-      guardrailsInstance: guardrails,
-      hitl,
-      memoryStore,
-    });
-
-    server = startServer(
-      {
-        cell,
-        basePath,
-        budget: cell['budget'],
-        observability: cell['observability'],
-        guardrails,
-        hitl,
-        memoryStore,
-        verificationCommands: [],
-      },
-      0
-    );
+    // Empty verification commands keep tests deterministic and fast.
+    context = buildSharedContext(basePath);
+    server = startServer(context, 0);
     const info = await listen(server);
     url = info.url;
     close = info.close;
@@ -84,158 +128,77 @@ describe('Server + Cell shared services', () => {
 
   afterEach(async () => {
     await close();
+    await context.cell.flush();
+    rmSync(basePath, { recursive: true, force: true });
   });
 
   it('shares guardrails approval between HTTP API and cell loop', async () => {
-    // Use an action that is allowed by the shell allow-list but destructive,
-    // so the only blocker is the destructive-approval rule.
-    const action = { tool: 'shell', input: 'rm important.txt' };
+    // `npm run rm file.txt` is allowed by the allow-list and flagged as destructive.
+    const destructiveAction = { tool: 'shell', input: 'npm run rm file.txt' };
 
-    // Configure shared guardrails to allow the command base so only the
-    // destructive-approval rule can block it.
-    guardrails = new Guardrails({
-      workspacePath: basePath,
-      defaultAllowList: ['rm', 'echo'],
-      requireApprovalForDestructive: true,
-      approvedDestructive: new Set<string>(),
-    });
+    // Before approval, the cell's shared guardrails block the action.
+    const before = context.guardrails.check({ stepId: 'test', ...destructiveAction });
+    assert.equal(before.ok, false, 'expected guardrails to block unapproved destructive action');
 
-    // Recreate the cell and server with the reconfigured shared guardrails.
-    await close();
-    cell = new Cell({
-      basePath,
-      verificationCommands: [],
-      maxRetries: 1,
-      guardrailsInstance: guardrails,
-      hitl,
-      memoryStore,
-    });
-    server = startServer(
-      {
-        cell,
-        basePath,
-        budget: cell['budget'],
-        observability: cell['observability'],
-        guardrails,
-        hitl,
-        memoryStore,
-        verificationCommands: [],
-      },
-      0
-    );
-    const info = await listen(server);
-    url = info.url;
-    close = info.close;
+    // Approve the action through the HTTP API.
+    const approved = (await postJson(`${url}/guardrails/approve`, destructiveAction)) as { approved: string; ok: boolean };
+    assert.equal(typeof approved.approved, 'string');
+    assert.equal(approved.ok, true);
 
-    // Before approval the shared guardrails reject the action.
-    let check = await fetch(`${url}/guardrails/check`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(action),
-    });
-    let checkBody = (await check.json()) as { ok: boolean };
-    assert.equal(checkBody.ok, false, 'action should start unapproved');
-
-    // Approve via the HTTP endpoint.
-    const approve = await fetch(`${url}/guardrails/approve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(action),
-    });
-    const approveBody = (await approve.json()) as { approved: string; ok: boolean };
-    assert.ok(approveBody.approved, 'approve endpoint should return a hash');
-    assert.equal(approveBody.ok, true, 'approve endpoint should report guardrails pass after approval');
-
-    // The same guardrails instance is used by the cell, so a local check now passes.
-    const localCheck = guardrails.check({ stepId: 'test', tool: action.tool, input: action.input });
-    assert.equal(localCheck.ok, true, 'cell should see the approved destructive action');
-
-    // And the HTTP endpoint still agrees.
-    check = await fetch(`${url}/guardrails/check`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(action),
-    });
-    checkBody = (await check.json()) as { ok: boolean };
-    assert.equal(checkBody.ok, true, 'HTTP should still agree after approval');
+    // The same guardrails instance used by the cell loop now allows the action.
+    const after = context.guardrails.check({ stepId: 'test', ...destructiveAction });
+    assert.equal(after.ok, true, 'expected guardrails to allow the approved destructive action');
+    assert.equal(after.note, 'Guardrails passed');
   });
 
   it('shares HITL reviews between HTTP API and cell loop', async () => {
-    const mission = await cell.queueMission('test mission', 'test description');
+    // Queue a mission whose plan contains a `shell` step. Because the HITL
+    // instance requires approval for the `shell` tool, the executing tick will
+    // pause and create a review.
+    const queueResult = (await postJson(`${url}/missions`, {
+      title: 'HITL shared review test',
+      description: 'report current status',
+    })) as { mission: { id: string } };
+    const missionId = queueResult.mission.id;
 
-    // Put the mission into a paused state as if a real execution had asked
-    // HITL to review its first step. This requires a matching plan and
-    // pendingReviewId in memory, not just a review record.
-    const mem = await cell['memory'].load();
-    mission.status = 'in_progress';
-    mem.currentMissionId = mission.id;
-    mem.currentState = 'paused';
-    mem.currentPlan = {
-      missionId: mission.id,
-      goal: mission.description,
-      reasoning: 'test plan',
-      steps: [
-        {
-          id: 'step-1',
-          description: 'delete something',
-          tool: 'delete_file',
-          input: 'something.ts',
-        },
-      ],
-    };
+    await postJson(`${url}/tick`, {}); // idle -> planning
+    await postJson(`${url}/tick`, {}); // planning -> executing
+    await postJson(`${url}/tick`, {}); // executing -> hits HITL gate -> paused
 
-    // Ask the shared HITL to review the planned action for the mission.
-    const gate = await hitl.check(
-      { stepId: 'step-1', tool: 'delete_file', input: 'something.ts' },
-      mission.id,
-      'step-1'
+    // Confirm a pending review exists for the mission.
+    const pendingBefore = (await getJson(`${url}/reviews/pending`)) as { reviews: Array<{ id: string; missionId: string; status: string }> };
+    assert.ok(pendingBefore.reviews.length >= 1, `expected at least one pending review after tick, got ${pendingBefore.reviews.length}`);
+    const reviewId = pendingBefore.reviews.find((r) => r.missionId === missionId)!.id;
+
+    // Cell state should be paused, waiting for the review.
+    let status = (await getJson(`${url}/status`)) as { state: string };
+    assert.equal(status.state, 'paused');
+
+    // Resolve the review through the HTTP API.
+    const resolved = (await postJson(`${url}/reviews/resolve`, {
+      reviewId,
+      verdict: 'approved',
+      feedback: 'approved via integration test',
+    })) as { review: { id: string; status: string } };
+    assert.equal(resolved.review.status, 'approved');
+
+    // The cell's internal HITL instance sees the resolved review.
+    const cellReviews = await context.hitl.list();
+    const matching = cellReviews.find((r) => r.id === reviewId);
+    assert.ok(matching, 'expected cell HITL to list the resolved review');
+    assert.equal(matching!.status, 'approved');
+
+    // Next tick resumes from the pending review and continues the mission.
+    await postJson(`${url}/tick`, {});
+
+    status = (await getJson(`${url}/status`)) as { state: string };
+    assert.ok(
+      status.state === 'idle' || status.state === 'executing' || status.state === 'verifying',
+      `expected mission to resume, got ${status.state}`
     );
-    assert.equal(gate.ok, false);
-    const reviewId = gate.review!.id;
-    mem.pendingReviewId = reviewId;
 
-    // Mutate the mission in the same memory snapshot so save captures it.
-    const missionInMem = mem.missions.find((m) => m.id === mission.id)!;
-    missionInMem.status = 'in_progress';
-
-    await cell['memory'].save(mem);
-
-    // The HTTP /reviews endpoint sees the pending review.
-    const list = await (await fetch(`${url}/reviews`)).json() as { reviews: { id: string; status: string }[] };
-    assert.ok(list.reviews.some((r) => r.id === reviewId && r.status === 'pending'));
-
-    // Resolve via the HTTP endpoint.
-    const resolve = await fetch(`${url}/reviews/resolve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reviewId, verdict: 'approved', feedback: 'go ahead' }),
-    });
-    const resolveBody = await resolve.json() as { ok: boolean; review: { status: string } };
-    assert.equal(resolveBody.ok, true);
-    assert.equal(resolveBody.review.status, 'approved');
-
-    // A local call to hitl.list() sees the same resolution.
-    const localReviews = await hitl.list();
-    const localReview = localReviews.find((r) => r.id === reviewId);
-    assert.equal(localReview?.status, 'approved', 'cell loop should see resolved review');
-    assert.equal(localReview?.feedback, 'go ahead');
-
-    // Re-load memory and confirm the review is the one we stored.
-    const reloaded = await cell['memory'].load();
-    assert.equal(reloaded.pendingReviewId, reviewId);
-    assert.equal(reloaded.currentMissionId, mission.id);
-    assert.equal(reloaded.currentState, 'paused');
-    assert.equal(reloaded.missions.find((m) => m.id === mission.id)?.status, 'in_progress');
-
-    // tick() resumes the mission when the pending review is approved.
-    // Note: the Cell tick() may re-pause if executing the plan step hits
-    // another HITL gate; we only assert the pending review is cleared and the
-    // mission is still alive, which proves the resolved review propagated.
-    await cell.tick();
-
-    const afterTick = await cell['memory'].load();
-    assert.equal(afterTick.pendingReviewId, undefined, 'tick should clear the now-resolved review');
-    const missionAfterTick = afterTick.missions.find((m) => m.id === mission.id);
-    assert.equal(missionAfterTick?.status, 'in_progress', 'mission should still be alive');
+    const finalReviews = (await getJson(`${url}/reviews`)) as { reviews: Array<{ id: string; status: string }> };
+    const finalReview = finalReviews.reviews.find((r) => r.id === reviewId);
+    assert.equal(finalReview?.status, 'approved');
   });
 });

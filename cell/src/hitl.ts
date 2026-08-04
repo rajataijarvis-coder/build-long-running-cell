@@ -56,6 +56,13 @@ export class HumanInTheLoop {
       return { ok: false, review: existing, reason: `Pending review ${existing.id} exists` };
     }
 
+    // A previously approved review for this mission/step means the gate is
+    // already cleared; do not create duplicate requests for the same action.
+    const approved = state.reviews.find((r) => r.missionId === missionId && r.stepId === stepId && r.status === 'approved');
+    if (approved) {
+      return { ok: true };
+    }
+
     let ruleId: string | undefined;
     let reason: string | undefined;
 
