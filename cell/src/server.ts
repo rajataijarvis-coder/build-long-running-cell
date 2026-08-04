@@ -257,7 +257,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       if (url.pathname === '/reason' && req.method === 'POST') {
         const { plan, priorThought, priorObservation, context } = await readBody();
         const reasoner = new Reasoner();
-        const thought = reasoner.reason(
+        const thought = await reasoner.reason(
           plan as import('./types.js').Plan,
           priorThought as import('./types.js').Thought | undefined,
           priorObservation as import('./types.js').Observation | undefined,

@@ -397,9 +397,30 @@ In the multi-loop chapter, a `Maker` produces a code change and a `Checker` runs
 
 ### Adapter / provider pattern — interchangeable backends
 
-`ToolRegistry` already uses this idea: tools are looked up by name and can be swapped without changing the actor. The same pattern applies to LLM providers, embedding models, or different memory stores: the cell talks to an interface, not a concrete vendor. The course keeps a rule-based baseline so it runs without API keys, but the architecture is ready for a provider implementation. `cell/src/llm/types.ts` defines the `LLMProvider` interface, and concrete providers (Ollama, OpenAI-compatible) can be added without changing the planner, reasoner, or lead engineer.
+`ToolRegistry` already uses this idea: tools are looked up by name and can be swapped without changing the actor. The same pattern applies to LLM providers, embedding models, or different memory stores: the cell talks to an interface, not a concrete vendor.
 
-- File: `cell/src/tools.ts` (registry), `cell/src/types.ts` (interfaces), `cell/src/llm/types.ts` (LLM provider interface)
+The course keeps a rule-based baseline so it runs without API keys, but the architecture is ready for a provider implementation. `cell/src/llm/types.ts` defines the `LLMProvider` interface. Concrete providers live in `cell/src/llm/ollama-provider.ts` (local Ollama) and `cell/src/llm/openai-provider.ts` (OpenAI-compatible APIs, including proxies). `cell/src/llm/factory.ts` creates a provider from environment variables or returns `undefined` to keep the cell rule-based.
+
+When a provider is configured, `Planner.plan`, `Reasoner.reason`, and `LeadEngineer.decompose` ask the LLM first and fall back to the existing rule-based paths if the response is unparseable. This means students can run the entire course locally, then flip one environment variable to add LLM intelligence without changing the cell logic.
+
+- File: `cell/src/tools.ts` (registry), `cell/src/types.ts` (interfaces), `cell/src/llm/` (provider layer)
+
+### Environment-driven configuration
+
+The cell reads `LLM_PROVIDER` to decide whether to use an LLM and which vendor to call:
+
+```bash
+# Rule-based baseline (default)
+LLM_PROVIDER=none npm run dev
+
+# Local Ollama
+LLM_PROVIDER=ollama LLM_MODEL=llama3.1 npm run dev
+
+# OpenAI or OpenAI-compatible proxy
+LLM_PROVIDER=openai LLM_API_KEY=sk-... LLM_MODEL=gpt-4o-mini npm run dev
+```
+
+Optional variables: `LLM_BASE_URL`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`.
 
 ## State machine
 

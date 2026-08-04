@@ -77,6 +77,8 @@ Create `cell/src/reasoner.ts`. The reasoner receives the current plan, the previ
 
 For this chapter the reasoner uses explicit rules rather than an LLM. That keeps the code deterministic and cheap to test, while preserving the same interface you would use with an LLM later.
 
+> **Optional LLM backing:** The repo now ships with an `LLMProvider` interface and rule-based fallback. You can configure `LLM_PROVIDER=ollama` or `LLM_PROVIDER=openai` (plus `LLM_API_KEY` and `LLM_MODEL`) to let the reasoner ask an LLM for the next action. If the LLM response cannot be parsed, the deterministic rule-based path still runs. See `docs/ARCHITECTURE.md` for the full environment-variable list.
+
 ```ts
 import type { Plan, PlanStep, Action, Thought, ReasonerOptions } from './types.js';
 

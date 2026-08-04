@@ -2,6 +2,8 @@ import { Coordinator, type CoordinationResult } from './coordinator.js';
 import type { Mission, Tool, LeadRun } from './types.js';
 import type { Reasoner } from './reasoner.js';
 import type { Reflector } from './reflector.js';
+import type { LLMProvider } from './llm/types.js';
+import { buildDecompositionPrompt, parseDecompositionResponse } from './llm/prompts.js';
 import { GitMemory, FailureMemory } from './git-memory.js';
 import { Observability } from './observability.js';
 
@@ -22,6 +24,8 @@ export interface LeadEngineerOptions {
   failureMemory?: FailureMemory;
   /** Optional observability collector to increment the lead-runs counter. */
   observability?: Observability;
+  /** Optional LLM provider for mission decomposition. If omitted, rule-based decomposition is used. */
+  llm?: LLMProvider;
 }
 
 export interface DecomposedMission {
@@ -58,8 +62,20 @@ export class LeadEngineer {
    * into two missions: one to update documentation and one to add code. Goals
    * that do not match any pattern are returned as a single mission so the
    * coordinator still has something to execute.
+   *
+   * If an LLM provider is configured, it is asked first and the rule-based
+   * path is used as a fallback when the LLM does not return usable JSON.
    */
-  decompose(goal: string): DecomposedMission[] {
+  async decompose(goal: string): Promise<DecomposedMission[]> {
+    if (this.options.llm) {
+      const prompt = buildDecompositionPrompt(goal);
+      const response = await this.options.llm.complete({ messages: prompt, temperature: 0.2 });
+      const parsed = parseDecompositionResponse(response.text);
+      if (parsed && parsed.length > 0) {
+        return parsed;
+      }
+    }
+
     const lower = goal.toLowerCase();
     const missions: DecomposedMission[] = [];
     const max = this.options.maxSubMissions ?? 4;
@@ -114,7 +130,7 @@ export class LeadEngineer {
    * through isolated worktrees.
    */
   async execute(goal: string): Promise<LeadResult> {
-    const decomposed = this.decompose(goal);
+    const decomposed = await this.decompose(goal);
     const now = new Date().toISOString();
 
     const missions: Mission[] = decomposed.map((m) => ({

@@ -106,7 +106,7 @@ export class LoopEngine {
     for (let step = attempt + 1; step <= this.maxIterations; step++) {
       attempt = step;
       const plan = await this.planner.plan(missionId, accumulatedTask, retrievalContext);
-      const thought = this.reasoner.reason(plan, priorThought, priorObservation, accumulatedTask, retrievalContext);
+      const thought = await this.reasoner.reason(plan, priorThought, priorObservation, accumulatedTask, retrievalContext);
       const action = thought.action;
       const rawOutput = await this.actor.act(action);
       const observation = this.observer.observe(action, rawOutput);

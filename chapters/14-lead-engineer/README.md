@@ -33,6 +33,8 @@ The lead engineer cell is therefore a separate role from the specialist cells:
 
 This separation is what makes scaling possible. You can improve decomposition independently from execution. You can swap a rule-based decomposer for an LLM without touching the coordinator. You can add new specialist types without changing the lead engineer's contract.
 
+> **Optional LLM backing:** The repo now ships with an `LLMProvider` interface, Ollama/OpenAI-compatible providers, and a factory that reads `LLM_PROVIDER`, `LLM_API_KEY`, `LLM_MODEL`, etc. from the environment. Set `LLM_PROVIDER=ollama` or `LLM_PROVIDER=openai` and `LeadEngineer.decompose` will ask the LLM for missions, falling back to the keyword-based decomposer if the response is unparseable. See `docs/ARCHITECTURE.md` for details.
+
 This chapter builds the smallest useful lead engineer: a `LeadEngineer` class that decomposes goals by keyword, converts the decomposition into `Mission` objects, and passes them to the `Coordinator`.
 
 ## Recap: where we are

@@ -25,24 +25,24 @@ describe('LeadEngineer', () => {
     repo = makeRepo();
   });
 
-  it('decomposes a documentation goal into a docs mission', () => {
+  it('decomposes a documentation goal into a docs mission', async () => {
     const lead = new LeadEngineer({ basePath: repo, verificationCommands: [] });
-    const missions = lead.decompose('Update the README with new instructions');
+    const missions = await lead.decompose('Update the README with new instructions');
     assert.equal(missions.length, 1);
     assert.match(missions[0].title, /documentation/i);
   });
 
-  it('decomposes a product goal into docs and module missions', () => {
+  it('decomposes a product goal into docs and module missions', async () => {
     const lead = new LeadEngineer({ basePath: repo, verificationCommands: [] });
-    const missions = lead.decompose('Add a utility module and update the README');
+    const missions = await lead.decompose('Add a utility module and update the README');
     assert.ok(missions.length >= 2);
     assert.ok(missions.some((m) => /module/i.test(m.title)));
     assert.ok(missions.some((m) => /documentation/i.test(m.title)));
   });
 
-  it('falls back to a single mission for unknown goals', () => {
+  it('falls back to a single mission for unknown goals', async () => {
     const lead = new LeadEngineer({ basePath: repo, verificationCommands: [] });
-    const missions = lead.decompose('Refactor everything');
+    const missions = await lead.decompose('Refactor everything');
     assert.equal(missions.length, 1);
     assert.equal(missions[0].description, 'Refactor everything');
   });

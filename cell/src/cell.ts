@@ -12,6 +12,8 @@ import { RetrievalEngine } from './retrieval.js';
 import { BudgetTracker } from './budget.js';
 import { Observability } from './observability.js';
 import { HumanInTheLoop } from './hitl.js';
+import type { LLMProvider } from './llm/types.js';
+import { createLLMProviderFromEnv } from './llm/factory.js';
 import type { CellState, JournalEntry, Mission, Tool, ToolRegistry, ReasonerOptions, ReflectorOptions, Budget, MetricSnapshot } from './types.js';
 
 export interface CellConfig {
@@ -32,6 +34,8 @@ export interface CellConfig {
   budget?: BudgetTracker;
   /** Optional observability collector. If omitted, metrics are tracked in memory only. */
   observability?: Observability;
+  /** Optional LLM provider. If omitted, one is created from environment variables when available. */
+  llm?: LLMProvider;
   /** Optional human-in-the-loop gate. If omitted, no actions require human approval. */
   hitl?: HumanInTheLoop;
 }
@@ -54,7 +58,10 @@ export class Cell {
     this.config = config;
     this.memory = new GitMemory(config.basePath);
     this.journal = new ExecutionJournal(config.basePath);
-    this.planner = new Planner({ maxSteps: config.maxRetries });
+
+    const llm = config.llm ?? createLLMProviderFromEnv();
+
+    this.planner = new Planner({ maxSteps: config.maxRetries, llm });
     this.memoryStore = config.memoryStore ?? new MemoryStore({ basePath: config.basePath });
     this.retrieval = config.retrieval ?? new RetrievalEngine({ topK: 5 });
     this.budget = config.budget ?? new BudgetTracker({ basePath: config.basePath });
@@ -83,7 +90,7 @@ export class Cell {
       )
     );
 
-    this.reasoner = config.reasoner ?? new Reasoner(config.reasonerOptions ?? { maxSteps: config.maxRetries }, defaultRegistry);
+    this.reasoner = config.reasoner ?? new Reasoner(config.reasonerOptions ?? { maxSteps: config.maxRetries }, defaultRegistry, llm);
     this.reflector = config.reflector ?? new Reflector(config.reflectorOptions ?? { maxAttempts: config.maxRetries });
 
     this.loopEngine = new LoopEngine(

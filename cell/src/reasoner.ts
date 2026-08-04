@@ -1,28 +1,41 @@
 import type { Plan, PlanStep, Action, Thought, ReasonerOptions, ToolRegistry, Observation } from './types.js';
+import type { LLMProvider } from './llm/types.js';
+import { buildReasoningPrompt, parseReasoningResponse } from './llm/prompts.js';
 
 /**
  * A deterministic reasoner that turns a plan and the history of observations
  * into the next concrete action. This is the ReAct core: reasoning about what
  * to do, then choosing a concrete tool call.
  *
- * In a production cell this is often an LLM prompt (ReAct style). Here we use
- * explicit rules so the reasoning is inspectable, deterministic, and cheap to
- * test. The interface is the same: given context, produce a Thought containing
- * the selected action.
+ * When an LLM provider is supplied, the reasoner asks the LLM for the next
+ * action and falls back to the explicit rule-based path if the response cannot
+ * be parsed. Without an LLM the behavior stays inspectable, deterministic, and
+ * cheap to test.
  */
 export class Reasoner {
   constructor(
     private readonly options: ReasonerOptions = {},
-    private readonly registry?: ToolRegistry
+    private readonly registry?: ToolRegistry,
+    private readonly llm?: LLMProvider
   ) {}
 
-  reason(
+  async reason(
     plan: Plan,
     priorThought: Thought | undefined,
     priorObservation: Observation | undefined,
     context: string,
     retrievalContext?: string
-  ): Thought {
+  ): Promise<Thought> {
+    if (this.llm) {
+      const prompt = buildReasoningPrompt(plan, priorThought, priorObservation, context, retrievalContext);
+      const response = await this.llm.complete({ messages: prompt, temperature: 0.2 });
+      const parsed = parseReasoningResponse(response.text);
+      if (parsed) {
+        return { stepId: parsed.action.stepId, text: parsed.text, action: parsed.action };
+      }
+      // Fall through to rule-based path if LLM response is unparseable.
+    }
+
     const stepNumber = priorThought ? this.stepIndexFromId(plan, priorThought.stepId) + 2 : 1;
     const step = this.selectStep(plan, stepNumber, priorObservation);
     const tool = this.pickTool(step, priorObservation);

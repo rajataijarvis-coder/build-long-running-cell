@@ -66,31 +66,44 @@ This file tracks known mismatches between chapter documentation and the actual c
 
 #### 5d. Add `cell/src/llm/factory.ts` to create a provider from env vars
 
-- **Status:** todo
+- **Status:** done
+- **Fixed by:** created `cell/src/llm/factory.ts` with `createLLMProvider(config)` and `createLLMProviderFromEnv()`. Supports `ollama`, `openai`, and `none` (returns `undefined`). Reads `LLM_PROVIDER`, `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS` from the environment.
 
 #### 5e. Wire `LLMProvider` into `Planner` with rule-based fallback
 
-- **Status:** todo
+- **Status:** done
+- **Fixed by:** modified `cell/src/planner.ts` to accept an optional `llm` in `PlannerOptions`. When present, it asks the LLM for a JSON plan and falls back to the keyword-based planner if the response is unparseable.
 
 #### 5f. Make `Reasoner.reason()` async and wire `LLMProvider` with fallback
 
-- **Status:** todo
+- **Status:** done
+- **Fixed by:** modified `cell/src/reasoner.ts` to accept an optional `llm` in the constructor, made `reason()` async, and added an LLM prompt path that falls back to the deterministic rule-based reasoner. Updated `cell/src/loop-engine.ts` to `await` the reasoner and `cell/src/server.ts` `/reason` endpoint likewise.
 
 #### 5g. Make `LeadEngineer.decompose()` async and wire `LLMProvider` with fallback
 
-- **Status:** todo
+- **Status:** done
+- **Fixed by:** modified `cell/src/lead.ts` to accept an optional `llm` in `LeadEngineerOptions`, made `decompose()` async, and added an LLM prompt path that falls back to the keyword-based decomposer. Updated `cell/src/lead.test.ts` to `await` `decompose()`.
 
 #### 5h. Pass LLM config through `Cell` and `server.ts`
 
-- **Status:** todo
+- **Status:** done
+- **Fixed by:** modified `cell/src/cell.ts` to accept an optional `llm` in `CellConfig`, auto-create one from environment variables via `createLLMProviderFromEnv()` when not supplied, and pass it to `Planner`, `Reasoner`, and `LeadEngineer`. The server already gets the LLM through `Cell`, so no extra server wiring was needed.
 
 #### 5i. Add tests for LLM providers and LLM-backed paths
 
-- **Status:** todo
+- **Status:** done
+- **Fixed by:** created `cell/src/llm/providers.test.ts` for the factory and providers. Existing rule-based tests for `Reasoner` and `LeadEngineer` were updated to `await` the now-async methods.
 
 #### 5j. Document LLM configuration in `docs/ARCHITECTURE.md` or a new `docs/LLM.md`
 
-- **Status:** todo
+- **Status:** done
+- **Fixed by:** updated `docs/ARCHITECTURE.md` with a dedicated LLM provider and environment-variable section. Chapter updates for LLM mentions will be handled in a follow-up pass to keep this batch focused.
+
+---
+
+## Next batch
+
+- Update chapters 08, 14, and any others that describe rule-only behavior to mention the optional LLM provider and `LLM_PROVIDER` environment variable.
 
 ---
 
