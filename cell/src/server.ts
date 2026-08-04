@@ -12,6 +12,7 @@ import { CellNetwork } from './network.js';
 import { MemoryStore } from './memory-store.js';
 import { RetrievalEngine } from './retrieval.js';
 import { Coordinator } from './coordinator.js';
+import { LeadEngineer } from './lead.js';
 import type { JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -227,6 +228,30 @@ export function startServer(cell: Cell, port = 3456) {
           maxRetries: Number(body.maxRetries ?? 3),
         });
         const result = await coordinator.coordinate(missions);
+        res.end(JSON.stringify({ ok: true, result }));
+        return;
+      }
+
+      if (url.pathname === '/lead' && req.method === 'POST') {
+        const body = await readBody();
+        const goal = String(body.goal ?? '');
+        if (!goal.trim()) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ ok: false, error: 'goal is required' }));
+          return;
+        }
+        const lead = new LeadEngineer({
+          basePath: process.cwd(),
+          verificationCommands: [
+            ['npm', ['run', 'lint']],
+            ['npm', ['run', 'build']],
+            ['npm', ['test']],
+          ],
+          maxConcurrency: Number(body.maxConcurrency ?? 2),
+          maxRetries: Number(body.maxRetries ?? 2),
+          maxSubMissions: Number(body.maxSubMissions ?? 4),
+        });
+        const result = await lead.execute(goal);
         res.end(JSON.stringify({ ok: true, result }));
         return;
       }

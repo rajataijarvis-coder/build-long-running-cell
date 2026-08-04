@@ -42,6 +42,21 @@ interface MemoryResult {
   score: number;
 }
 
+interface LeadResult {
+  ok: boolean;
+  result?: {
+    goal: string;
+    missions: Array<{ id: string; title: string; description: string }>;
+    coordination: {
+      results: Array<{ name: string; missionId: string; success: boolean }>;
+      merged: string[];
+      rejected: Array<{ missionId: string; reason: string }>;
+      failed: Array<{ missionId: string; error: string }>;
+    };
+  };
+  error?: string;
+}
+
 export default function Home() {
   const [status, setStatus] = useState<Status | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -50,6 +65,8 @@ export default function Home() {
   const [subagentResult, setSubagentResult] = useState<ReviewResult | null>(null);
   const [memoryQuery, setMemoryQuery] = useState('timeout failure');
   const [memoryResults, setMemoryResults] = useState<MemoryResult[]>([]);
+  const [leadGoal, setLeadGoal] = useState('Add a utility module and update the README');
+  const [leadResult, setLeadResult] = useState<LeadResult | null>(null);
 
   async function fetchStatus() {
     const res = await fetch('/api/cell/status');
@@ -113,6 +130,31 @@ export default function Home() {
       setLogs((l) => [...l, `Memory returned ${data.results.length} result(s)`]);
     } else {
       setLogs((l) => [...l, `Memory search failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function runLeadEngineer() {
+    setLogs((l) => [...l, `Lead engineer decomposing: ${leadGoal}`]);
+    const res = await fetch('/api/cell/lead', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        goal: leadGoal,
+        maxConcurrency: 2,
+        maxRetries: 2,
+        maxSubMissions: 4,
+      }),
+    });
+    const data = await res.json();
+    setLeadResult(data);
+    if (data.ok && data.result) {
+      const { coordination } = data.result;
+      setLogs((l) => [
+        ...l,
+        `Lead complete. ${data.result.missions.length} mission(s), ${coordination.merged.length} merged, ${coordination.rejected.length} rejected, ${coordination.failed.length} failed.`,
+      ]);
+    } else {
+      setLogs((l) => [...l, `Lead engineer failed: ${data.error ?? 'unknown'}`]);
     }
   }
 
@@ -198,6 +240,45 @@ export default function Home() {
             {subagentResult.error && (
               <p className="text-rose-400">{subagentResult.error}</p>
             )}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-slate-700 p-4 mb-6">
+        <h2 className="text-xl font-semibold mb-2">Lead Engineer</h2>
+        <p className="text-sm text-slate-400 mb-3">
+          Give the lead engineer a high-level goal. It decomposes the goal into missions, runs them in isolated worktrees, and merges the results.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <input
+            value={leadGoal}
+            onChange={(e) => setLeadGoal(e.target.value)}
+            placeholder="High-level goal"
+            className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1"
+          />
+          <button
+            onClick={runLeadEngineer}
+            className="px-4 py-2 rounded bg-cyan-600 hover:bg-cyan-500 transition"
+          >
+            Decompose & Run
+          </button>
+        </div>
+        {leadResult && leadResult.result && (
+          <div className="bg-slate-900 rounded p-3 text-sm space-y-2">
+            <p className="text-cyan-400">Goal: {leadResult.result.goal}</p>
+            <p>Missions: {leadResult.result.missions.map((m) => m.title).join(', ')}</p>
+            <p>
+              Results: {leadResult.result.coordination.results.filter((r) => r.success).length} /{' '}
+              {leadResult.result.coordination.results.length} succeeded
+            </p>
+            <p>Merged files: {leadResult.result.coordination.merged.length}</p>
+            {leadResult.result.coordination.rejected.length > 0 && (
+              <p className="text-rose-400">Rejected: {leadResult.result.coordination.rejected.length}</p>
+            )}
+            {leadResult.result.coordination.failed.length > 0 && (
+              <p className="text-rose-400">Failed: {leadResult.result.coordination.failed.length}</p>
+            )}
+            {leadResult.error && <p className="text-rose-400">{leadResult.error}</p>}
           </div>
         )}
       </section>
