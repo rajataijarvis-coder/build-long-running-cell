@@ -348,10 +348,93 @@ graph LR
 | Dashboard | `frontend/src/app/page.tsx`, `frontend/src/components/*` |
 | Deployment | `Dockerfile`, `docker-compose.yml`, `cell/scripts/*.plist` |
 
-## Design principles
+## Design patterns used (plain language)
 
-1. **Durability before cleverness.** Every meaningful state change is written to Git-backed memory before the next step runs.
-2. **Composition over monoliths.** The cell is built from small primitives (planner, actor, observer, reasoner, reflector) that are independently testable.
-3. **Safety by default.** Guardrails, budgets, and human-in-the-loop gates sit between intent and execution.
-4. **Observable by design.** Each subsystem emits metrics and records history so operators can compare performance across releases.
-5. **Separate surface from core.** The dashboard is stateless and talks to the cell over HTTP; either can be deployed or restarted independently.
+If you are not comfortable with design-pattern terminology, think of them as recurring "shapes" that keep the codebase organised.
+
+### State pattern — the cell is always in one state
+
+`Cell` uses `CellState = 'idle' | 'planning' | 'executing' | 'verifying' | 'reviewing'`. At any moment the cell is in exactly one of those states, and only certain transitions are allowed. This prevents the cell from trying to verify a mission it has not executed, or from running two missions at once in the same loop.
+
+- File: `cell/src/cell.ts`
+- Type: `cell/src/types.ts` (`CellState`)
+
+### Registry pattern — looking up tools by name
+
+A `ToolRegistry` stores tools under string names (`'read_file'`, `'edit_file'`, `'shell'`, `'verify'`). The `Actor` asks the registry for the tool by name and runs it. Adding a new tool does not require editing the actor; you register it once and every part of the system can use it.
+
+- File: `cell/src/tools.ts`
+
+### Strategy pattern — picking the right runner for the job
+
+The `Coordinator` decides which `Specialist` should run a mission based on the mission type (`'docs'`, `'tests'`, `'api'`, `'code'`). Each specialist implements the same interface but behaves differently. This is the strategy pattern: same contract, interchangeable implementations.
+
+- Files: `cell/src/coordinator.ts`, `cell/src/specialist.ts`
+
+### Repository pattern — durable storage as a service
+
+`GitMemory` hides the fact that state is stored in Git-backed JSON files. The rest of the code calls `memory.load()` and `memory.save(cell)` without knowing where the files live. If you later want to store state in SQLite or Postgres, you only change `GitMemory`, not the whole cell.
+
+- File: `cell/src/git-memory.ts`
+
+### Observer pattern — collecting metrics without tangling code
+
+`Observability` exposes `increment(counter)` and `snapshot()`. Subsystems call `increment('missionsCompleted')` when something happens. The dashboard later reads the snapshot. The subsystems do not need to know about the dashboard; they just emit events.
+
+- File: `cell/src/observability.ts`
+
+### Maker / checker pattern — one agent proposes, another verifies
+
+In the multi-loop chapter, a `Maker` produces a code change and a `Checker` runs verification on it. Only if the checker passes is the proposal accepted. This pattern separates creation from validation and catches mistakes before they reach memory.
+
+- File: `cell/src/loop-engine.ts` / multi-loop code paths
+
+### Coordinator / worker pattern — one dispatcher, many isolated workers
+
+`Coordinator` takes a batch of missions and dispatches each one to a `Specialist` running in a separate Git worktree. The worktrees are isolated, so a failing mission cannot corrupt the main workspace.
+
+- Files: `cell/src/coordinator.ts`, `cell/src/worktree.ts`
+
+### Adapter / provider pattern — interchangeable backends
+
+`ToolRegistry` already uses this idea: tools are looked up by name and can be swapped without changing the actor. The same pattern applies to LLM providers, embedding models, or different memory stores: the cell talks to an interface, not a concrete vendor. This course keeps the baseline rule-based so it runs without API keys, but the architecture is ready for a provider implementation.
+
+- File: `cell/src/tools.ts` (registry), `cell/src/types.ts` (interfaces)
+
+## State machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> idle
+    idle --> planning : tick / new mission
+    planning --> executing : plan ready
+    executing --> verifying : step(s) done
+    verifying --> reviewing : verify passed
+    verifying --> executing : verify failed, retry
+    reviewing --> idle : mission accepted
+    reviewing --> failed : mission rejected
+    failed --> idle : logged
+```
+
+## Data flow overview
+
+```mermaid
+flowchart LR
+    Goal([Goal / HTTP request])
+    Cell[Cell / Orchestrator]
+    Memory[(GitMemory)]
+    Loop[LoopEngine]
+    Tools[ToolRegistry]
+    LLM[LLMProvider]
+    Verify[Verification gate]
+    Out([Result / dashboard])
+
+    Goal --> Cell
+    Cell --> Memory
+    Cell --> Loop
+    Loop --> LLM
+    Loop --> Tools
+    Tools --> Verify
+    Loop --> Memory
+    Cell --> Out
+```

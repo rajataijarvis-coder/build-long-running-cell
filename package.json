@@ -7,6 +7,7 @@
     "verify:cell": "cd cell && npm run verify",
     "build:frontend": "cd frontend && npm run build",
     "verify": "npm run verify:cell && npm run build:frontend",
+    "sync": "node scripts/node_modules/.bin/tsx scripts/sync-course.ts",
     "start:cell": "cd cell && npm run build && node dist/main.js",
     "start:cell:prod": "cd cell && npm run build && AUTO_TICK=true AUTO_SCHEDULE=true node dist/main.js",
     "start:frontend": "cd frontend && npm run build && npm run start",
