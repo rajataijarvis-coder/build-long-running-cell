@@ -7,6 +7,7 @@ const DEFAULT_MEMORY: CellMemory = {
   missions: [],
   progressLog: [],
   decisions: [],
+  proposals: [],
 };
 
 export class GitMemory {
@@ -69,5 +70,23 @@ export class GitMemory {
     memory.decisions.push(decision);
     await this.save(memory);
     return decision;
+  }
+
+  async addProposal(proposal: CellMemory['proposals'][number]): Promise<void> {
+    const memory = await this.load();
+    memory.proposals.push(proposal);
+    await this.save(memory);
+  }
+
+  async updateProposal(
+    id: string,
+    patch: Partial<Omit<CellMemory['proposals'][number], 'id' | 'createdAt'>>
+  ): Promise<CellMemory['proposals'][number] | undefined> {
+    const memory = await this.load();
+    const index = memory.proposals.findIndex((p) => p.id === id);
+    if (index === -1) return undefined;
+    memory.proposals[index] = { ...memory.proposals[index], ...patch, updatedAt: new Date().toISOString() };
+    await this.save(memory);
+    return memory.proposals[index];
   }
 }

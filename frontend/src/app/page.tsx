@@ -21,10 +21,23 @@ interface Plan {
   reasoning: string;
 }
 
+interface ReviewResult {
+  ok: boolean;
+  result?: {
+    approved?: boolean;
+    rounds?: number;
+    finalReview?: { verdict: string; feedback: string };
+    error?: string;
+  };
+  error?: string;
+}
+
 export default function Home() {
   const [status, setStatus] = useState<Status | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [plan, setPlan] = useState<Plan | null>(null);
+  const [subagentTask, setSubagentTask] = useState('verify the project');
+  const [subagentResult, setSubagentResult] = useState<ReviewResult | null>(null);
 
   async function fetchStatus() {
     const res = await fetch('/api/cell/status');
@@ -54,6 +67,27 @@ export default function Home() {
       setLogs((l) => [...l, `Plan loaded: ${data.plan.steps.length} steps`]);
     } else {
       setLogs((l) => [...l, `Plan failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function runSubagentCoordinate() {
+    setLogs((l) => [...l, `Coordinating subagents for: ${subagentTask}`]);
+    const res = await fetch('/api/cell/coordinate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        missionId: status?.mission?.id ?? 'dashboard',
+        task: subagentTask,
+        maxRounds: 3,
+        maxIterations: 2,
+      }),
+    });
+    const data = await res.json();
+    setSubagentResult(data);
+    if (data.ok && data.result?.approved) {
+      setLogs((l) => [...l, `Subagents approved after ${data.result.rounds} round(s)`]);
+    } else {
+      setLogs((l) => [...l, `Subagents did not approve: ${data.result?.error ?? data.error ?? 'unknown'}`]);
     }
   }
 
@@ -99,6 +133,49 @@ export default function Home() {
           Show Plan
         </button>
       </div>
+
+      <section className="rounded-lg border border-slate-700 p-4 mb-6">
+        <h2 className="text-xl font-semibold mb-2">Maker / Checker Subagents</h2>
+        <p className="text-sm text-slate-400 mb-3">
+          Run a maker subagent that proposes a solution and a checker subagent that reviews it.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <input
+            value={subagentTask}
+            onChange={(e) => setSubagentTask(e.target.value)}
+            placeholder="Task for maker/checker"
+            className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1"
+          />
+          <button
+            onClick={runSubagentCoordinate}
+            className="px-4 py-2 rounded bg-purple-600 hover:bg-purple-500 transition"
+          >
+            Coordinate
+          </button>
+        </div>
+        {subagentResult && (
+          <div className="bg-slate-900 rounded p-3 text-sm space-y-1">
+            <p>
+              Result:{" "}
+              <span className={subagentResult.ok ? "text-emerald-400" : "text-rose-400"}>
+                {subagentResult.ok ? "Approved" : "Not approved"}
+              </span>
+            </p>
+            {subagentResult.result?.rounds && (
+              <p>Rounds: {subagentResult.result.rounds}</p>
+            )}
+            {subagentResult.result?.finalReview && (
+              <p>Verdict: {subagentResult.result.finalReview.verdict}</p>
+            )}
+            {subagentResult.result?.error && (
+              <p className="text-rose-400">{subagentResult.result.error}</p>
+            )}
+            {subagentResult.error && (
+              <p className="text-rose-400">{subagentResult.error}</p>
+            )}
+          </div>
+        )}
+      </section>
 
       {plan && (
         <section className="rounded-lg border border-slate-700 p-4 mb-6">

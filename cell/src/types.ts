@@ -19,6 +19,8 @@ export interface CellMemory {
   currentPlan?: Plan;
   /** Context from the inner reasoning loop so a restart can resume mid-thought. */
   reasoningContext?: ReasoningContext;
+  /** Proposals produced by maker subagents and reviewed by checker subagents. */
+  proposals: Proposal[];
 }
 
 export interface ReasoningContext {
@@ -52,6 +54,49 @@ export interface WorkItem {
   missionId: string;
   payload: Record<string, unknown>;
   status: 'pending' | 'running' | 'done' | 'failed';
+}
+
+export type ReviewVerdict = 'approve' | 'revise' | 'reject';
+
+export interface Review {
+  /** The plan step or mission step that was reviewed. */
+  stepId: string;
+  verdict: ReviewVerdict;
+  /** Human-readable feedback to the maker. */
+  feedback: string;
+  /** Specific concerns that triggered a revise/reject verdict. */
+  concerns?: string[];
+}
+
+export interface Proposal {
+  id: string;
+  missionId: string;
+  stepId: string;
+  /** The patch, diff, or artifact the maker produced. */
+  artifact: string;
+  /** The reasoning the maker used to arrive at the proposal. */
+  reasoning: string;
+  /** Current status in the maker/checker pipeline. */
+  status: 'proposed' | 'approved' | 'rejected' | 'revised';
+  /** Reviews attached to this proposal. */
+  reviews: Review[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentResult {
+  success: boolean;
+  output: string;
+  artifact?: string;
+  reasoning?: string;
+  /** Optional structured loop result when the agent is a maker/checker wrapper. */
+  loopResult?: Record<string, unknown>;
+}
+
+export interface SubAgent {
+  readonly name: string;
+  readonly role: 'maker' | 'checker';
+  run(input: string, context: Record<string, unknown>): Promise<AgentResult>;
 }
 
 export interface Plan {

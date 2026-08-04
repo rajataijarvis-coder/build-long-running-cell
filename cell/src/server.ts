@@ -7,6 +7,8 @@ import { Observer } from './observer.js';
 import { Reasoner } from './reasoner.js';
 import { Reflector } from './reflector.js';
 import { ToolRegistryImpl, ShellTool } from './tools.js';
+import { MakerSubAgent, CheckerSubAgent } from './subagent.js';
+import { CellNetwork } from './network.js';
 import type { JournalEntry } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -131,6 +133,43 @@ export function startServer(cell: Cell, port = 3456) {
           Number(attempt)
         );
         res.end(JSON.stringify({ ok: true, reflection }));
+        return;
+      }
+
+      if (url.pathname === '/propose' && req.method === 'POST') {
+        const { task, missionId, maxIterations, verificationCommands } = await readBody();
+        const maker = new MakerSubAgent({
+          maxIterations: Number(maxIterations ?? 3),
+          verificationCommands: verificationCommands as [string, string[]][] | undefined,
+        });
+        const result = await maker.run(String(task), { missionId: String(missionId ?? 'propose') });
+        res.end(JSON.stringify({ ok: true, result }));
+        return;
+      }
+
+      if (url.pathname === '/review' && req.method === 'POST') {
+        const { makerResult, missionId } = await readBody();
+        const checker = new CheckerSubAgent();
+        const result = await checker.run('', {
+          missionId: String(missionId ?? 'review'),
+          makerResult: makerResult as import('./loop-engine.js').LoopResult,
+        });
+        res.end(JSON.stringify({ ok: true, result }));
+        return;
+      }
+
+      if (url.pathname === '/coordinate' && req.method === 'POST') {
+        const { task, missionId, maxRounds, maxIterations, verificationCommands } = await readBody();
+        const network = new CellNetwork({
+          maker: new MakerSubAgent({
+            maxIterations: Number(maxIterations ?? 3),
+            verificationCommands: verificationCommands as [string, string[]][] | undefined,
+          }),
+          checker: new CheckerSubAgent(),
+          maxRounds: Number(maxRounds ?? 3),
+        });
+        const result = await network.run(String(missionId ?? 'coordinate'), String(task));
+        res.end(JSON.stringify({ ok: result.approved, result }));
         return;
       }
 
