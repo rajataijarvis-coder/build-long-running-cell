@@ -33,16 +33,14 @@ This file tracks known mismatches between chapter documentation and the actual c
 ### 3. Missing `frontend/src/app/api/cell/status/route.test.ts`
 
 - **Chapter:** 21-nextjs-dashboard
-- **Status:** todo
-- **Problem:** Chapter references a dashboard route test that does not exist.
-- **Fix:** Add a test for the status route that mocks the cell backend.
+- **Status:** done
+- **Fixed by:** created `frontend/src/app/api/cell/status/route.test.ts` with the chapter's smoke test for the status route. The chapter prose already described the test; the code was the only missing piece.
 
 ### 4. Missing `frontend/src/lib/cell.test.ts`
 
 - **Chapter:** 21-nextjs-dashboard
-- **Status:** todo
-- **Problem:** Chapter references a unit test for the shared `cellFetch` helper that does not exist.
-- **Fix:** Add a test for `cellFetch` in `frontend/src/lib/cell.ts`.
+- **Status:** done
+- **Fixed by:** created `frontend/src/lib/cell.test.ts` with the chapter's `CELL_URL` validation test. The chapter prose already described the test; the code was the only missing piece.
 
 ### 5. LLM provider abstraction missing
 
