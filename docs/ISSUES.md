@@ -126,11 +126,13 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 **Problem:** Chapter 21 contains large code blocks for multiple components (`StatusPanel`, `ObservabilityPanel`, `PlanPanel`) in one chapter. This is overwhelming for junior devs and harder to keep in sync with the actual `frontend/` code.
 
 **Fix:**
-- [ ] Split the chapter into focused sections, or move detailed component code into the files themselves.
-- [ ] Keep the chapter narrative: why a dashboard, the proxy pattern, and how to verify.
-- [ ] Add diagrams showing request flow: browser → Next.js API route → cell server.
+- [x] Split the chapter into focused sections, or move detailed component code into the files themselves.
+- [x] Keep the chapter narrative: why a dashboard, the proxy pattern, and how to verify.
+- [x] Add diagrams showing request flow: browser → Next.js API route → cell server.
 
-**Files:** `chapters/21-nextjs-dashboard/README.md`, possibly `chapters/22-dashboard-panels/` (new)
+**Status:** Fixed in commit `d6bb76c`. Rewrote `chapters/21-nextjs-dashboard/README.md` to focus on architecture, the proxy pattern, `CELL_URL`, and verification. Removed the large inline component blocks and pointed readers to the actual `frontend/src/components/*Panel.tsx` files. Added an ASCII request-flow diagram and a dashboard panels reference table.
+
+**Files:** `chapters/21-nextjs-dashboard/README.md`
 
 ---
 
