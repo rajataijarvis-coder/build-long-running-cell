@@ -190,9 +190,11 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 **Problem:** If/when we add a dark-factory entry point, we need tests proving it disables HITL but keeps guardrails, verification, and budgets active.
 
 **Fix:**
-- [ ] Add `cell/src/factory.test.ts` that asserts `createDarkFactoryContext` returns a context whose `hitl` approves every action, whose `guardrails` still block prompt-injection / path-escape / network-egress, and whose `verificationCommands` and `budget` are wired into the cell.
+- [x] Add `cell/src/factory.test.ts` that asserts `createDarkFactoryContext` returns a context whose `hitl` approves every action, whose `guardrails` still block prompt-injection / path-escape / network-egress, and whose `verificationCommands` and `budget` are wired into the cell. (commit `7fd53e1`)
 
-**Files:** `cell/src/factory.test.ts` (new)
+**Status:** Resolved.
+
+**Files:** `cell/src/factory.test.ts` (new), `cell/src/cell.ts`
 
 ---
 
