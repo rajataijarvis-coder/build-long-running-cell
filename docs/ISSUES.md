@@ -64,7 +64,7 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 
 **Problem:** Addy Osmani's "Own the Outer Loop" article emphasizes three things: **Quality**, **Verdict**, and **Answerability**. The course already has quality (verification) and verdict (HITL), but answerability is only implicit. There is no structured way to answer: "What changed? Why was it safe? What will happen if it is wrong?"
 
-**Status:** Fixed in this commit. Added `AccountabilityContract` type, `AccountabilityStore`, `Cell.buildAccountabilityContract()` / `Cell.listAccountability()`, and `/accountability` HTTP endpoint. Created `docs/ACCOUNTABILITY.md` and linked it from `docs/TOC.md`.
+**Status:** Fixed in commit `aa1559e`. Added `AccountabilityContract` type, `AccountabilityStore`, `Cell.buildAccountabilityContract()` / `Cell.listAccountability()`, and `/accountability` HTTP endpoint. Created `docs/ACCOUNTABILITY.md` and linked it from `docs/TOC.md`. Dashboard panel remains for a later polish pass.
 
 **Files:** `cell/src/types.ts`, `cell/src/accountability-store.ts`, `cell/src/cell.ts`, `cell/src/server.ts`, `docs/ACCOUNTABILITY.md`, `docs/TOC.md`
 
