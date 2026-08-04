@@ -2,7 +2,7 @@ import { Coordinator, type CoordinationResult } from './coordinator.js';
 import type { Mission, Tool, LeadRun } from './types.js';
 import type { Reasoner } from './reasoner.js';
 import type { Reflector } from './reflector.js';
-import { GitMemory } from './git-memory.js';
+import { GitMemory, FailureMemory } from './git-memory.js';
 
 export interface LeadEngineerOptions {
   basePath: string;
@@ -17,6 +17,8 @@ export interface LeadEngineerOptions {
   useSpecialists?: boolean;
   /** Optional durable memory for persisting lead-run summaries. */
   memory?: GitMemory;
+  /** Optional failure memory for learning from prior failures. */
+  failureMemory?: FailureMemory;
 }
 
 export interface DecomposedMission {
@@ -131,6 +133,7 @@ export class LeadEngineer {
       reasoner: this.options.reasoner,
       reflector: this.options.reflector,
       useSpecialists: this.options.useSpecialists ?? false,
+      failureMemory: this.options.failureMemory,
     });
 
     const coordination = await coordinator.coordinate(missions);

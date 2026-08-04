@@ -13,7 +13,7 @@ import { MemoryStore } from './memory-store.js';
 import { RetrievalEngine } from './retrieval.js';
 import { Coordinator } from './coordinator.js';
 import { LeadEngineer } from './lead.js';
-import { GitMemory } from './git-memory.js';
+import { GitMemory, FailureMemory } from './git-memory.js';
 import type { JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -207,6 +207,18 @@ export function startServer(cell: Cell, port = 3456) {
         return;
       }
 
+      if (url.pathname === '/failures') {
+        const kind = url.searchParams.get('kind') ?? undefined;
+        const limit = Number(url.searchParams.get('limit') ?? '20');
+        const memory = new FailureMemory(new GitMemory(process.cwd()));
+        let failures = await memory.recent(limit);
+        if (kind) {
+          failures = failures.filter((f) => f.kind === kind);
+        }
+        res.end(JSON.stringify({ ok: true, failures }));
+        return;
+      }
+
       if (url.pathname === '/coordinate-server' && req.method === 'POST') {
         const body = await readBody();
         const missions = (body.missions as Array<Record<string, unknown>> ?? []).map((m) => ({
@@ -241,6 +253,7 @@ export function startServer(cell: Cell, port = 3456) {
           res.end(JSON.stringify({ ok: false, error: 'goal is required' }));
           return;
         }
+        const failureMemory = new FailureMemory(new GitMemory(process.cwd()));
         const lead = new LeadEngineer({
           basePath: process.cwd(),
           verificationCommands: [
@@ -253,6 +266,7 @@ export function startServer(cell: Cell, port = 3456) {
           maxSubMissions: Number(body.maxSubMissions ?? 4),
           useSpecialists: Boolean(body.useSpecialists),
           memory: new GitMemory(process.cwd()),
+          failureMemory,
         });
         const result = await lead.execute(goal);
         res.end(JSON.stringify({ ok: true, result }));

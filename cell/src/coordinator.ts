@@ -1,5 +1,6 @@
 import { CellRunner, type RunnerResult } from './runner.js';
 import { Specialist, kindForMission } from './specialist.js';
+import { FailureMemory } from './git-memory.js';
 import type { Mission, Tool } from './types.js';
 import type { Reasoner } from './reasoner.js';
 import type { Reflector } from './reflector.js';
@@ -18,6 +19,8 @@ export interface CoordinatorOptions {
   useSpecialists?: boolean;
   reasoner?: Reasoner;
   reflector?: Reflector;
+  /** Optional failure memory for learning from prior failures. */
+  failureMemory?: FailureMemory;
 }
 
 export interface CoordinationResult {
@@ -34,13 +37,43 @@ export class Coordinator {
     return kindForMission(mission.title);
   }
 
+  private async shouldEscalate(mission: Mission): Promise<{ escalate: boolean; reason?: string }> {
+    if (!this.options.failureMemory) return { escalate: false };
+
+    const unresolved = await this.options.failureMemory.unresolved();
+    const similar = unresolved.filter((f) =>
+      f.missionId === mission.id ||
+      mission.title.toLowerCase().includes(f.kind.toLowerCase())
+    );
+
+    const unrecoverable = similar.filter((f) => f.recovery === 'escalate' || f.recovery === 'skip');
+    if (unrecoverable.length > 0) {
+      return {
+        escalate: true,
+        reason: `Known unrecoverable failure pattern: ${unrecoverable[0].kind} (${unrecoverable[0].reason})`,
+      };
+    }
+
+    return { escalate: false };
+  }
+
   async coordinate(missions: Mission[]): Promise<CoordinationResult> {
     const runners: CellRunner[] = [];
     const results: RunnerResult[] = [];
+    const preFailed: Array<{ missionId: string; error: string }> = [];
     const maxConcurrency = this.options.maxConcurrency ?? 3;
 
-    for (let i = 0; i < missions.length; i += maxConcurrency) {
-      const batch = missions.slice(i, i + maxConcurrency);
+    for (const mission of missions) {
+      const { escalate, reason } = await this.shouldEscalate(mission);
+      if (escalate) {
+        preFailed.push({ missionId: mission.id, error: reason ?? 'Escalated due to known failure pattern' });
+      }
+    }
+
+    const runnableMissions = missions.filter((m) => !preFailed.some((f) => f.missionId === m.id));
+
+    for (let i = 0; i < runnableMissions.length; i += maxConcurrency) {
+      const batch = runnableMissions.slice(i, i + maxConcurrency);
       const batchRunners = batch.map((m, idx) => {
         const name = `runner-${i + idx}`;
         if (!this.options.useSpecialists) {
@@ -52,6 +85,7 @@ export class Coordinator {
             tools: this.options.tools,
             reasoner: this.options.reasoner,
             reflector: this.options.reflector,
+            failureMemory: this.options.failureMemory,
           });
         }
         const kind = this.kindForMission(m);
@@ -64,6 +98,7 @@ export class Coordinator {
           tools: this.options.tools,
           reasoner: this.options.reasoner,
           reflector: this.options.reflector,
+          failureMemory: this.options.failureMemory,
         }) as unknown as CellRunner;
       });
       runners.push(...batchRunners);
@@ -79,7 +114,7 @@ export class Coordinator {
 
     await Promise.all(runners.map((r) => r.remove()));
 
-    return { results, merged, rejected, failed };
+    return { results, merged, rejected, failed: [...preFailed, ...failed] };
   }
 
   private async merge(results: RunnerResult[]): Promise<{ merged: string[]; rejected: Array<{ missionId: string; reason: string }> }> {

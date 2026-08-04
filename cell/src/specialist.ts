@@ -1,4 +1,5 @@
 import { CellRunner, type RunnerResult } from './runner.js';
+import { FailureMemory } from './git-memory.js';
 import type { Mission, Tool } from './types.js';
 import type { Reasoner } from './reasoner.js';
 import type { Reflector } from './reflector.js';
@@ -22,6 +23,8 @@ export interface SpecialistOptions {
   maxRetries?: number;
   reasoner?: Reasoner;
   reflector?: Reflector;
+  /** Optional failure memory for recording classified failures. */
+  failureMemory?: FailureMemory;
 }
 
 export interface SpecialistProfile {
@@ -59,6 +62,7 @@ export class Specialist {
       tools: [...(options.tools ?? []), ...profile.extraTools],
       reasoner: options.reasoner,
       reflector: options.reflector,
+      failureMemory: options.failureMemory,
     });
   }
 

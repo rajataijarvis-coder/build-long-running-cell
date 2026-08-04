@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import type { CellMemory, Mission, Decision, LeadRun } from './types.js';
+import type { CellMemory, Mission, Decision, LeadRun, FailureRecord } from './types.js';
 
 const DEFAULT_MEMORY: CellMemory = {
   currentState: 'idle',
@@ -95,5 +95,41 @@ export class GitMemory {
     memory.proposals[index] = { ...memory.proposals[index], ...patch, updatedAt: new Date().toISOString() };
     await this.save(memory);
     return memory.proposals[index];
+  }
+}
+
+export class FailureMemory {
+  constructor(private readonly memory: GitMemory) {}
+
+  async record(record: FailureRecord): Promise<void> {
+    const memory = await this.memory.load();
+    memory.failures = memory.failures ?? [];
+    memory.failures.push(record);
+    await this.memory.save(memory);
+  }
+
+  async recent(limit = 20): Promise<FailureRecord[]> {
+    const memory = await this.memory.load();
+    const list = memory.failures ?? [];
+    return list.slice(-limit).reverse();
+  }
+
+  async byKind(kind: string): Promise<FailureRecord[]> {
+    const memory = await this.memory.load();
+    return (memory.failures ?? []).filter((f) => f.kind === kind);
+  }
+
+  async unresolved(): Promise<FailureRecord[]> {
+    const memory = await this.memory.load();
+    return (memory.failures ?? []).filter((f) => f.resolved !== true);
+  }
+
+  async markResolved(id: string): Promise<boolean> {
+    const memory = await this.memory.load();
+    const found = memory.failures?.find((f) => f.id === id);
+    if (!found) return false;
+    found.resolved = true;
+    await this.memory.save(memory);
+    return true;
   }
 }

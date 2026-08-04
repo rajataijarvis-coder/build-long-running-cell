@@ -42,6 +42,17 @@ interface MemoryResult {
   score: number;
 }
 
+interface FailureRecord {
+  id: string;
+  missionId: string;
+  kind: string;
+  message: string;
+  source: string;
+  timestamp: string;
+  recovery: string;
+  resolved?: boolean;
+}
+
 interface LeadResult {
   ok: boolean;
   result?: {
@@ -67,6 +78,8 @@ export default function Home() {
   const [memoryResults, setMemoryResults] = useState<MemoryResult[]>([]);
   const [leadGoal, setLeadGoal] = useState('Add a utility module and update the README');
   const [leadResult, setLeadResult] = useState<LeadResult | null>(null);
+  const [failures, setFailures] = useState<FailureRecord[]>([]);
+  const [failureKindFilter, setFailureKindFilter] = useState('');
 
   async function fetchStatus() {
     const res = await fetch('/api/cell/status');
@@ -155,6 +168,20 @@ export default function Home() {
       ]);
     } else {
       setLogs((l) => [...l, `Lead engineer failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function fetchFailures() {
+    const params = new URLSearchParams();
+    if (failureKindFilter) params.set('kind', failureKindFilter);
+    params.set('limit', '20');
+    const res = await fetch(`/api/cell/failures?${params.toString()}`, { cache: 'no-store' });
+    const data = await res.json();
+    if (data.ok && data.failures) {
+      setFailures(data.failures);
+      setLogs((l) => [...l, `Loaded ${data.failures.length} failure record(s)`]);
+    } else {
+      setLogs((l) => [...l, `Failure fetch failed: ${data.error ?? 'unknown'}`]);
     }
   }
 
@@ -279,6 +306,40 @@ export default function Home() {
               <p className="text-rose-400">Failed: {leadResult.result.coordination.failed.length}</p>
             )}
             {leadResult.error && <p className="text-rose-400">{leadResult.error}</p>}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-slate-700 p-4 mb-6">
+        <h2 className="text-xl font-semibold mb-2">Failure Learning</h2>
+        <p className="text-sm text-slate-400 mb-3">
+          Recent classified failures. The coordinator consults this memory before retrying a mission.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <input
+            value={failureKindFilter}
+            onChange={(e) => setFailureKindFilter(e.target.value)}
+            placeholder="Filter by kind (env, timeout, code, ...)"
+            className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1"
+          />
+          <button
+            onClick={fetchFailures}
+            className="px-4 py-2 rounded bg-rose-600 hover:bg-rose-500 transition"
+          >
+            Load Failures
+          </button>
+        </div>
+        {failures.length > 0 && (
+          <div className="bg-slate-900 rounded p-3 text-sm space-y-2 max-h-60 overflow-auto">
+            {failures.map((f) => (
+              <div key={f.id} className="border-b border-slate-800 last:border-0 pb-2 last:pb-0">
+                <p className="text-rose-400">
+                  {f.kind} from {f.source} ({f.recovery})
+                </p>
+                <p className="text-slate-300 whitespace-pre-wrap">{f.message}</p>
+                <p className="text-slate-500 text-xs">{new Date(f.timestamp).toLocaleString()}</p>
+              </div>
+            ))}
           </div>
         )}
       </section>

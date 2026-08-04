@@ -20,6 +20,27 @@ export interface LeadRun {
   failed: string[];
 }
 
+export interface FailureRecord {
+  id: string;
+  missionId: string;
+  /** High-level class of the failure, e.g. lint, build, test, timeout, env, conflict. */
+  kind: string;
+  /** The exact stderr, exception message, or diagnostic text. */
+  message: string;
+  /** The verification command that produced the failure, if any. */
+  command?: string;
+  /** Specialist kind or runner name that observed the failure. */
+  source: string;
+  /** ISO timestamp when the failure was recorded. */
+  timestamp: string;
+  /** Recommended recovery action. */
+  recovery: 'retry' | 'retry-different-specialist' | 'escalate' | 'skip';
+  /** Whether a later run resolved this failure. */
+  resolved?: boolean;
+  /** Optional human-readable reason for the recovery recommendation. */
+  reason?: string;
+}
+
 export interface CellMemory {
   currentState: CellState;
   currentMissionId?: string;
@@ -33,6 +54,8 @@ export interface CellMemory {
   proposals: Proposal[];
   /** Summaries of lead-engineer decomposition and coordination runs. */
   leadRuns?: LeadRun[];
+  /** Record of classified failures so the cell can learn from them. */
+  failures?: FailureRecord[];
 }
 
 export interface ReasoningContext {
