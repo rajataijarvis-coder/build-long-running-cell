@@ -4,11 +4,15 @@ This file tracks known mismatches between chapter documentation and the actual c
 
 ## How the cron works
 
-1. `scripts/fix-next-gap.ts` reads this file.
+1. `scripts/fix-next-gap.ts` (or the gap-fixing cron agent) reads this file.
 2. It picks the first `todo` gap.
-3. It fixes the gap, updates this file to `done`, and runs `npm run verify`.
-4. If verify passes, it commits and pushes.
-5. The next cron run picks the next gap.
+3. It applies a **three-way sync** fix: actual code + chapter prose + documentation.
+   - If the gap is a missing file or implementation bug, create/fix the code.
+   - If the chapter prose contradicts the code, update the chapter to match.
+   - Update the relevant documentation (`docs/GAPS.md`, `docs/ARCHITECTURE.md`, `docs/TOC.md`, `README.md`) so students can follow the course day by day.
+4. It updates this file to mark the gap `done` with a fix summary.
+5. It runs `npm run verify`. If verify passes, it commits and pushes.
+6. The next cron run picks the next gap.
 
 ---
 
@@ -23,9 +27,8 @@ This file tracks known mismatches between chapter documentation and the actual c
 ### 2. Missing `frontend/src/app/api/cell/coordinate-server/route.ts`
 
 - **Chapter:** 13-multi-loop
-- **Status:** todo
-- **Problem:** Chapter references `coordinate-server/route.ts` but the actual dashboard route is `coordinate/route.ts`.
-- **Fix:** Either create the referenced route or update the chapter prose to match `coordinate/route.ts`.
+- **Status:** done
+- **Fixed by:** created `frontend/src/app/api/cell/coordinate-server/route.ts` that proxies to the existing cell `/coordinate-server` endpoint. The chapter prose already described this route correctly; the code was the only missing piece.
 
 ### 3. Missing `frontend/src/app/api/cell/status/route.test.ts`
 
