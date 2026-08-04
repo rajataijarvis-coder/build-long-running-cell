@@ -593,3 +593,17 @@ This is a study guide that maps every chapter in `chapters/` to the files it int
 4. Chapter 24 — orchestrator panel
 5. Chapter 25 — eval panel
 6. Chapter 26 — trace panel
+
+---
+
+## Post-publication updates
+
+These files and concepts were added after the 26 chapters were published. They are not tied to a single chapter yet, but they are part of the current codebase.
+
+| Concept / file | Where to read about it | What it does |
+|---|---|---|
+| `cell/src/factory.ts` | `docs/FACTORY_MODES.md` | Builds lit-factory and dark-factory `ServerContext` instances. |
+| `cell/src/main-dark.ts` | `docs/FACTORY_MODES.md` | Entry point that runs the cell in dark-factory mode. |
+| `ServerContext` | `docs/ARCHITECTURE.md` (Shared services), `cell/src/server.ts` | Shared services used by both the HTTP API and the cell loop. |
+| `cell/src/accountability-store.ts` | `docs/ACCOUNTABILITY.md` | Durable `AccountabilityContract` storage for outer-loop answerability. |
+| `docs/ACCOUNTABILITY.md` | `docs/ACCOUNTABILITY.md` | Maps Addy Osmani's three outer-loop questions to concrete code paths. |
