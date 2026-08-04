@@ -10,6 +10,34 @@ export interface Mission {
   updatedAt: string;
 }
 
+/**
+ * A record that answers Addy Osmani's three outer-loop questions:
+ * 1. What changed? (mission description, plan, diff)
+ * 2. Why was it safe? (verification, guardrails, human verdict)
+ * 3. What happens if it is wrong? (rollback path, retry/escalate policy)
+ */
+export interface AccountabilityContract {
+  id: string;
+  missionId: string;
+  goal: string;
+  planSummary: string;
+  /** Human-readable description of what changed, e.g. files touched, diffs, commands run. */
+  changeSummary: string;
+  /** Evidence that the change is acceptable: verification results, guardrail checks, HITL verdict. */
+  evidence: {
+    verificationPassed: boolean | null;
+    guardrailChecksPassed: boolean | null;
+    humanVerdict: 'approved' | 'rejected' | 'revised' | 'not_required' | null;
+    humanReviewId?: string;
+  };
+  /** Path to roll back the mission effects, typically a git command or memory restore. */
+  rollbackPath: string;
+  /** What the cell will do if this change causes a regression. */
+  recoveryPolicy: 'retry' | 'escalate-to-human' | 'auto-rollback';
+  sessionId?: string;
+  timestamp: string;
+}
+
 export interface LeadRun {
   id: string;
   goal: string;

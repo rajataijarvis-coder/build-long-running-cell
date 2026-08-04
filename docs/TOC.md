@@ -3,6 +3,7 @@
 - [Course overview](../README.md)
 - [System architecture](ARCHITECTURE.md)
 - [Factory modes: lit vs dark](FACTORY_MODES.md)
+- [Accountability and the outer loop](ACCOUNTABILITY.md)
 - [Design patterns](DESIGN_PATTERNS.md)
 - [Sequence diagrams](SEQUENCE_DIAGRAMS.md)
 - [Class diagrams](CLASS_DIAGRAMS.md)

@@ -271,6 +271,18 @@ export function startServer(
         return;
       }
 
+      if (url.pathname === '/accountability') {
+        const missionId = url.searchParams.get('missionId');
+        if (missionId) {
+          const contract = await cell.buildAccountabilityContract(missionId);
+          res.end(JSON.stringify({ ok: true, contract }));
+        } else {
+          const contracts = await cell.listAccountability();
+          res.end(JSON.stringify({ ok: true, contracts }));
+        }
+        return;
+      }
+
       if (url.pathname === '/tool' && req.method === 'POST') {
         const { tool, input } = await readBody();
         const registry = new ToolRegistryImpl([

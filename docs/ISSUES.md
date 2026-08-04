@@ -64,16 +64,9 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 
 **Problem:** Addy Osmani's "Own the Outer Loop" article emphasizes three things: **Quality**, **Verdict**, and **Answerability**. The course already has quality (verification) and verdict (HITL), but answerability is only implicit. There is no structured way to answer: "What changed? Why was it safe? What will happen if it is wrong?"
 
-**Fix:**
-- [ ] Add an `AccountabilityContract` record to Git memory (or extend `Mission`/`EvalRun`) that captures:
-  - What changed (mission description, plan, diff summary)
-  - Evidence (verification results, traces, guardrail checks)
-  - Verdict (HITL resolution or pre-approved rule)
-  - Owner / session / timestamp
-- [ ] Add a `/accountability` HTTP endpoint and dashboard panel.
-- [ ] Document it in a new `docs/ACCOUNTABILITY.md` that maps the three questions to concrete code paths.
+**Status:** Fixed in this commit. Added `AccountabilityContract` type, `AccountabilityStore`, `Cell.buildAccountabilityContract()` / `Cell.listAccountability()`, and `/accountability` HTTP endpoint. Created `docs/ACCOUNTABILITY.md` and linked it from `docs/TOC.md`.
 
-**Files:** `cell/src/types.ts`, `cell/src/cell.ts`, `cell/src/server.ts`, `frontend/src/app/page.tsx`, `docs/ACCOUNTABILITY.md` (new)
+**Files:** `cell/src/types.ts`, `cell/src/accountability-store.ts`, `cell/src/cell.ts`, `cell/src/server.ts`, `docs/ACCOUNTABILITY.md`, `docs/TOC.md`
 
 ---
 

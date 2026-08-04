@@ -12,9 +12,10 @@ import { RetrievalEngine } from './retrieval.js';
 import { BudgetTracker } from './budget.js';
 import { Observability } from './observability.js';
 import { HumanInTheLoop } from './hitl.js';
+import { AccountabilityStore } from './accountability-store.js';
 import type { LLMProvider } from './llm/types.js';
 import { createLLMProviderFromEnv } from './llm/factory.js';
-import type { CellState, JournalEntry, Mission, Tool, ToolRegistry, ReasonerOptions, ReflectorOptions, Budget, MetricSnapshot } from './types.js';
+import type { CellState, JournalEntry, Mission, Tool, ToolRegistry, ReasonerOptions, ReflectorOptions, Budget, MetricSnapshot, AccountabilityContract } from './types.js';
 
 export interface CellConfig {
   basePath: string;
@@ -55,6 +56,7 @@ export class Cell {
   private budget: BudgetTracker;
   private observability: Observability;
   private hitl: HumanInTheLoop;
+  private accountability: AccountabilityStore;
 
   /**
    * Returns the cell's configured planner. The HTTP server uses this so manual /plan
@@ -62,6 +64,61 @@ export class Cell {
    */
   getPlanner(): Planner {
     return this.planner;
+  }
+
+  /**
+   * Build an accountability contract for a mission: what changed, why it was
+   * safe, and how to recover if it was wrong. Saved to durable state.
+   */
+  async buildAccountabilityContract(missionId: string): Promise<AccountabilityContract> {
+    const mem = await this.memory.load();
+    const mission = mem.missions.find((m) => m.id === missionId);
+    const plan = mem.currentPlan;
+    const runs = await this.journal.forMission(missionId);
+    const verificationRuns = runs.filter((r) => r.state === 'verifying');
+    const lastVerification = verificationRuns.at(-1);
+    const reviews = await this.hitl.list();
+    const missionReviews = reviews.filter((r) => r.missionId === missionId);
+    const approvedReview = missionReviews.find((r) => r.status === 'approved');
+    const rejectedReview = missionReviews.find((r) => r.status === 'rejected' || r.status === 'revised');
+
+    const verdict: AccountabilityContract['evidence']['humanVerdict'] = rejectedReview
+      ? 'revised'
+      : approvedReview
+        ? 'approved'
+        : missionReviews.length > 0
+          ? 'not_required'
+          : null;
+
+    const contract: AccountabilityContract = {
+      id: `acct-${missionId}-${Date.now()}`,
+      missionId,
+      goal: mission?.description ?? plan?.goal ?? 'Unknown mission',
+      planSummary: plan
+        ? `${plan.steps.length} steps: ${plan.steps.map((s) => s.description).join('; ')}`
+        : 'No plan recorded',
+      changeSummary: `Mission ${missionId} touched workspace ${this.basePath}. Verification runs: ${verificationRuns.length}.`,
+      evidence: {
+        verificationPassed: lastVerification ? lastVerification.result === 'success' : null,
+        guardrailChecksPassed: null,
+        humanVerdict: verdict,
+        humanReviewId: approvedReview?.id ?? rejectedReview?.id,
+      },
+      rollbackPath: `cd ${this.basePath} && git log --oneline -n 5`,
+      recoveryPolicy: lastVerification?.result === 'failure' ? 'escalate-to-human' : 'retry',
+      sessionId: process.env.CELL_SESSION_ID,
+      timestamp: new Date().toISOString(),
+    };
+
+    await this.accountability.save(contract);
+    return contract;
+  }
+
+  /**
+   * List every accountability contract saved for this workspace.
+   */
+  async listAccountability(): Promise<AccountabilityContract[]> {
+    return this.accountability.loadAll();
   }
 
   constructor(config: CellConfig) {
@@ -78,6 +135,7 @@ export class Cell {
     this.budget = config.budget ?? new BudgetTracker({ basePath: config.basePath });
     this.observability = config.observability ?? new Observability({ basePath: config.basePath });
     this.hitl = config.hitl ?? new HumanInTheLoop({ basePath: config.basePath });
+    this.accountability = new AccountabilityStore(config.basePath);
 
     const guardrails = config.guardrailsInstance ?? new Guardrails(config.guardrails ?? {
       workspacePath: config.basePath,
