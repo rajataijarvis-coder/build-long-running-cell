@@ -56,6 +56,14 @@ export class Cell {
   private observability: Observability;
   private hitl: HumanInTheLoop;
 
+  /**
+   * Returns the cell's configured planner. The HTTP server uses this so manual /plan
+   * requests go through the same LLM and max-step policy as autonomous ticks.
+   */
+  getPlanner(): Planner {
+    return this.planner;
+  }
+
   constructor(config: CellConfig) {
     this.config = config;
     this.basePath = config.basePath;

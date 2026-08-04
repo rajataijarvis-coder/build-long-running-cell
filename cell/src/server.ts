@@ -2,7 +2,6 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { Cell } from './cell.js';
 import { runVerificationSuite } from './verify.js';
 import { GitMemory, FailureMemory } from './git-memory.js';
-import { Planner } from './planner.js';
 import { MemoryStore } from './memory-store.js';
 import { Actor } from './actor.js';
 import { Observer } from './observer.js';
@@ -198,7 +197,7 @@ export function startServer(
 
       if (url.pathname === '/plan' && req.method === 'POST') {
         const { missionId, goal, retrievalContext } = await readBody();
-        const planner = new Planner();
+        const planner = cell.getPlanner();
         const plan = await planner.plan(String(missionId), String(goal), retrievalContext ? String(retrievalContext) : undefined);
         res.end(JSON.stringify({ ok: true, plan }));
         return;
