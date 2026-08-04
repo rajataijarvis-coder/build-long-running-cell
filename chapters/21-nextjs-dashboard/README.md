@@ -9,10 +9,9 @@ By the end of this chapter you will be able to:
 1. Explain why a long-running cell needs a dedicated surface layer separate from the cell's HTTP API.
 2. Design a Next.js application that proxies cell endpoints, adds UI affordances, and degrades gracefully when the cell is offline.
 3. Implement a shared `CELL_URL` configuration and reusable API route patterns in `frontend/src/app/api/cell/`.
-4. Add a real dashboard panel that shows cell status, lets an operator tick the loop manually, and visualizes the most recent plan.
-5. Add budget and metrics panels that consume the `/budget` and `/metrics` endpoints from Chapter 20 and display them as human-readable cards.
-6. Run the frontend build as a first-class verification step so the dashboard cannot regress without CI noticing.
-7. Test the dashboard API routes in isolation and verify the whole stack with `npm run verify` and `npm run build:frontend`.
+4. Understand how the dashboard page composes small, focused panels: `StatusPanel`, `ObservabilityPanel`, and `PlanPanel`.
+5. Add the frontend build to the root verification pipeline so the dashboard cannot regress without CI noticing.
+6. Run the dashboard API routes in isolation and verify the whole stack with `npm run verify` and `npm run build:frontend`.
 
 ## Why this matters
 
@@ -24,7 +23,7 @@ A dashboard solves three problems at once:
 - **Discoverability.** A new teammate can open the dashboard and immediately see what the cell can do, what it is doing, and what has recently failed.
 - **Graceful degradation.** The cell may restart, crash, or be deployed on a different host. The dashboard should continue to render and explain the outage, not just fail silently.
 
-This chapter does not rebuild the entire UI for every feature the course has introduced. Instead it establishes the dashboard *architecture*: a Next.js frontend, a thin API proxy layer, a shared configuration convention, and a small set of core panels. Later chapters will extend this surface for human approval, deployment wiring, and the final capstone orchestration.
+This chapter establishes the dashboard *architecture*: a Next.js frontend, a thin API proxy layer, a shared configuration convention, and a small set of core panels. Later chapters extend this surface for human approval, orchestration, evaluation, traces, and deployment. Keeping the architectural chapter short keeps it maintainable and makes the course easier to follow.
 
 The production insight is that the cell and its surface should be separate deployables. The cell is a stateful, long-running process with a small HTTP API. The dashboard is a stateless Next.js app that can be deployed to Vercel, Netlify, or any static host, pointing at the cell through an environment variable. Keeping them separate means you can iterate on UI without restarting the cell, and you can upgrade the cell without touching the frontend.
 
@@ -46,7 +45,27 @@ From [Chapter 19: Safety and guardrails](../19-safety-guardrails/) the cell adde
 
 From [Chapter 20: Budget, cost, and observability](../20-budget-observability/) the cell added `BudgetTracker`, `Observability`, and `/budget` and `/metrics` HTTP endpoints.
 
-This chapter adds the surface. The cell already knows its own state, budget, metrics, plans, missions, failures, summaries, schedule, and guardrails. The dashboard makes all of that visible and actionable through a web UI.
+This chapter adds the surface. The cell already knows its own state, budget, metrics, plans, missions, failures, summaries, schedule, and guardrails. The dashboard makes that state visible and actionable through a web UI.
+
+## Architecture: browser → Next.js API route → cell server
+
+The dashboard never calls the cell directly from the browser. Every request follows this path:
+
+```
+┌──────────────┐      ┌──────────────────────┐      ┌────────────────┐
+│   Browser    │ ──▶  │ Next.js API route    │ ──▶  │  Cell server   │
+│  localhost   │ ◀──  │  /api/cell/status    │ ◀──  │  localhost:3456│
+│   :3000      │      │  /api/cell/tick      │      │                │
+└──────────────┘      └──────────────────────┘      └────────────────┘
+```
+
+This design avoids three common problems:
+
+1. **CORS.** The browser does not talk to the cell, so the cell does not need to serve permissive CORS headers.
+2. **Exposure.** The cell's host and port are never visible in client code.
+3. **Offline state.** If the cell is unreachable, the Next.js route catches the error and returns a friendly offline payload instead of a browser-level network failure.
+
+The route layer lives in `frontend/src/app/api/cell/`. A shared helper in `frontend/src/lib/cell.ts` centralises the cell URL and fetch logic so every route behaves consistently.
 
 ## Implementation
 
@@ -201,479 +220,49 @@ export default nextConfig;
 
 This does not change runtime behavior, but it documents the deployment contract: the dashboard must be told where the cell lives.
 
-### 4. Add a dashboard panel for status, tick, and plan
+### 4. The dashboard page composes panels
 
-The `frontend/src/app/page.tsx` file already contains a large single-page dashboard with many sections. For this chapter we focus on making the *core* panels robust: status, tick, plan, budget, and metrics. The larger dashboard can stay, but we will add a dedicated `StatusPanel` component to keep `page.tsx` maintainable as the surface grows.
+The main page, `frontend/src/app/page.tsx`, is intentionally a thin shell. It imports focused components from `frontend/src/components/` and renders them in order:
 
-Create `frontend/src/components/StatusPanel.tsx`:
+- `StatusPanel` — shows cell state and lets the operator tick the loop.
+- `ObservabilityPanel` — shows budget and metrics from Chapter 20.
+- `PlanPanel` — displays the current plan for the active mission.
+- `DeploymentPanel` — shows health, version, and uptime from Chapter 23.
+- `OrchestratorPanel`, `EvalPanel`, `TracePanel` — added in later chapters.
 
-```tsx
-'use client';
+Each panel owns its own data fetching and error state. Keeping the page as a shell means the dashboard can grow without `page.tsx` becoming unmaintainable. It also matches how production dashboards are usually built: one page file that composes many independent widgets.
 
-import { useEffect, useState } from 'react';
+### 5. StatusPanel: the minimal first panel
 
-interface Status {
-  state: string;
-  mission?: { id: string; title: string; status: string };
-}
+`frontend/src/components/StatusPanel.tsx` is the simplest useful panel. It polls `/api/cell/status`, renders the current state, and provides a **Tick** button that posts to `/api/cell/tick`.
 
-export default function StatusPanel() {
-  const [status, setStatus] = useState<Status | null>(null);
-  const [error, setError] = useState<string | null>(null);
+The pattern it demonstrates is the one every other panel follows:
 
-  async function fetchStatus() {
-    try {
-      const res = await fetch('/api/cell/status');
-      const data = await res.json();
-      setStatus(data);
-      setError(null);
-    } catch (err) {
-      setError((err as Error).message);
-      setStatus(null);
-    }
-  }
+1. Fetch from a Next.js API route on mount and on a short interval.
+2. Render a clear offline state if the cell is unreachable.
+3. Keep the component small enough that a reader can understand it in one screen.
 
-  async function tick() {
-    try {
-      const res = await fetch('/api/cell/tick', { method: 'POST' });
-      const data = await res.json();
-      setError(null);
-      await fetchStatus();
-      return data;
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
+Open the file in the repo to see the full implementation. The important architectural point is not the exact JSX; it is that the panel does not know the cell URL — that lives in `cellFetch`.
 
-  useEffect(() => {
-    fetchStatus();
-    const id = setInterval(fetchStatus, 3000);
-    return () => clearInterval(id);
-  }, []);
+### 6. ObservabilityPanel: budget and metrics
 
-  return (
-    <section className="rounded-lg border border-slate-700 p-4 mb-6">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xl font-semibold">Cell Status</h2>
-        <div className="flex gap-2">
-          <button
-            onClick={tick}
-            className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 transition"
-          >
-            Tick
-          </button>
-          <button
-            onClick={fetchStatus}
-            className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition"
-          >
-            Refresh
-          </button>
-        </div>
-      </div>
-      {error ? (
-        <div className="rounded bg-rose-900/30 text-rose-300 p-3 text-sm">
-          The dashboard cannot reach the cell. Make sure the cell server is running on {process.env.CELL_URL ?? 'http://localhost:3456'}.
-          <p className="mt-1 text-xs">{error}</p>
-        </div>
-      ) : status ? (
-        <div className="space-y-1 text-sm">
-          <p>
-            State:{' '}
-            <span className="font-mono text-emerald-400">{status.state}</span>
-          </p>
-          <p>
-            Mission:{' '}
-            {status.mission
-              ? `${status.mission.title} (${status.mission.status})`
-              : 'none'}
-          </p>
-        </div>
-      ) : (
-        <p className="text-slate-400 text-sm">Loading...</p>
-      )}
-    </section>
-  );
-}
-```
+`frontend/src/components/ObservabilityPanel.tsx` consumes the `/budget` and `/metrics` endpoints from Chapter 20. It renders budget cards, health counters, and a small event log.
 
-Then import it into `frontend/src/app/page.tsx` near the top of the main content:
+The code in the repo is the reference implementation. When reading it, notice:
 
-```tsx
-import StatusPanel from '@/components/StatusPanel';
+- Inputs for token, cost, and runtime limits POST to `/api/cell/budget`.
+- Reset buttons POST an empty body or `{ reset: true }` to the same endpoint.
+- Metrics are polled on a separate interval from status, because they update at different rates.
 
-// ... inside the return:
-<StatusPanel />
-```
+Because the panel is a separate component, a reader who only cares about budgets can study it without wading through unrelated dashboard code.
 
-This small refactor demonstrates the architectural point: the page becomes a shell that composes panels, and each panel owns its data fetching and error state.
+### 7. PlanPanel: current plan for the active mission
 
-### 5. Add a budget and metrics panel
+`frontend/src/components/PlanPanel.tsx` fetches a plan from `/api/cell/plan` when the operator clicks **Show Plan**. It takes the current status as a prop so it can refuse to plan when no mission is active.
 
-Create `frontend/src/components/ObservabilityPanel.tsx`:
+The reference implementation lives in the repo. The architectural point is that planning is *explicit* in the UI: the dashboard does not automatically spam the planner on every render. The operator decides when to ask for a plan.
 
-```tsx
-'use client';
-
-import { useEffect, useState } from 'react';
-
-interface BudgetState {
-  tokenLimit: number;
-  costLimit: number;
-  elapsedMsLimit: number;
-  currentTokens: number;
-  currentCost: number;
-  elapsedMs: number;
-  currency: string;
-  costPer1kTokens: number;
-  lastUpdatedAt: string;
-}
-
-interface MetricState {
-  timestamp: string;
-  ticks: number;
-  missionsCompleted: number;
-  missionsFailed: number;
-  leadRuns: number;
-  scheduledTasksRun: number;
-  guardrailBlocks: number;
-  verificationsRun: number;
-  memoryDocumentCount: number;
-}
-
-export default function ObservabilityPanel() {
-  const [budget, setBudget] = useState<BudgetState | null>(null);
-  const [metrics, setMetrics] = useState<{ health: string; metrics: MetricState } | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
-
-  const [tokenLimit, setTokenLimit] = useState('0');
-  const [costLimit, setCostLimit] = useState('0');
-  const [runtimeLimit, setRuntimeLimit] = useState('0');
-
-  function log(message: string) {
-    setLogs((l) => [...l, message]);
-  }
-
-  async function fetchBudget() {
-    const res = await fetch('/api/cell/budget', { cache: 'no-store' });
-    const data = await res.json();
-    if (data.ok && data.budget) {
-      setBudget(data.budget);
-      setTokenLimit(String(data.budget.tokenLimit));
-      setCostLimit(String(data.budget.costLimit));
-      setRuntimeLimit(String(data.budget.elapsedMsLimit));
-    }
-  }
-
-  async function fetchMetrics() {
-    const res = await fetch('/api/cell/metrics', { cache: 'no-store' });
-    const data = await res.json();
-    if (data.ok) {
-      setMetrics({ health: data.health, metrics: data.metrics });
-      log(`Metrics loaded (health: ${data.health})`);
-    } else {
-      log(`Metrics fetch failed: ${data.error ?? 'unknown'}`);
-    }
-  }
-
-  async function updateBudget() {
-    log('Updating budget limits...');
-    const res = await fetch('/api/cell/budget', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        tokenLimit: Number(tokenLimit),
-        costLimit: Number(costLimit),
-        elapsedMsLimit: Number(runtimeLimit),
-      }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      setBudget(data.budget);
-      log('Budget limits updated');
-    } else {
-      log(`Budget update failed: ${data.error ?? 'unknown'}`);
-    }
-  }
-
-  async function resetBudget() {
-    log('Resetting budget counters...');
-    const res = await fetch('/api/cell/budget', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reset: true }),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      setBudget(data.budget);
-      log('Budget counters reset');
-    } else {
-      log(`Budget reset failed: ${data.error ?? 'unknown'}`);
-    }
-  }
-
-  async function resetMetrics() {
-    log('Resetting metrics...');
-    const res = await fetch('/api/cell/metrics', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    });
-    const data = await res.json();
-    if (data.ok) {
-      setMetrics({ health: 'healthy', metrics: data.metrics });
-      log('Metrics reset');
-    } else {
-      log(`Metrics reset failed: ${data.error ?? 'unknown'}`);
-    }
-  }
-
-  useEffect(() => {
-    fetchBudget();
-    fetchMetrics();
-    const id = setInterval(fetchMetrics, 5000);
-    return () => clearInterval(id);
-  }, []);
-
-  return (
-    <section className="rounded-lg border border-slate-700 p-4 mb-6">
-      <h2 className="text-xl font-semibold mb-2">Budget, Cost & Observability</h2>
-      <p className="text-sm text-slate-400 mb-3">
-        Cap token use, estimated cost, and runtime. Observe health counters so you know when the cell is busy or failing.
-      </p>
-
-      <div className="grid grid-cols-3 gap-2 mb-3">
-        <input
-          value={tokenLimit}
-          onChange={(e) => setTokenLimit(e.target.value)}
-          placeholder="Token limit (0 = unlimited)"
-          className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
-        />
-        <input
-          value={costLimit}
-          onChange={(e) => setCostLimit(e.target.value)}
-          placeholder="Cost limit (0 = unlimited)"
-          className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
-        />
-        <input
-          value={runtimeLimit}
-          onChange={(e) => setRuntimeLimit(e.target.value)}
-          placeholder="Runtime ms limit (0 = unlimited)"
-          className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
-        />
-      </div>
-
-      <div className="flex gap-2 mb-4 flex-wrap">
-        <button onClick={updateBudget} className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 transition">
-          Set Limits
-        </button>
-        <button onClick={resetBudget} className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition">
-          Reset Counters
-        </button>
-        <button onClick={fetchMetrics} className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 transition">
-          Load Metrics
-        </button>
-        <button onClick={resetMetrics} className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition">
-          Reset Metrics
-        </button>
-      </div>
-
-      {budget && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm mb-4">
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Tokens</p>
-            <p className="font-mono">
-              {budget.currentTokens.toLocaleString()} / {budget.tokenLimit > 0 ? budget.tokenLimit.toLocaleString() : '∞'}
-            </p>
-          </div>
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Cost</p>
-            <p className="font-mono">
-              {budget.currentCost.toFixed(4)} / {budget.costLimit > 0 ? budget.costLimit.toFixed(4) : '∞'} {budget.currency}
-            </p>
-          </div>
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Runtime</p>
-            <p className="font-mono">
-              {budget.elapsedMs.toLocaleString()} / {budget.elapsedMsLimit > 0 ? budget.elapsedMsLimit.toLocaleString() : '∞'} ms
-            </p>
-          </div>
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Cost/1k tokens</p>
-            <p className="font-mono">
-              {budget.costPer1kTokens} {budget.currency}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {metrics && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-          <div className={`rounded p-2 ${metrics.health === 'healthy' ? 'bg-emerald-900/30 text-emerald-300' : 'bg-yellow-900/30 text-yellow-300'}`}>
-            <p className="opacity-80">Health</p>
-            <p className="font-semibold capitalize">{metrics.health}</p>
-          </div>
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Ticks</p>
-            <p className="font-mono">{metrics.metrics.ticks}</p>
-          </div>
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Completed</p>
-            <p className="font-mono text-emerald-400">{metrics.metrics.missionsCompleted}</p>
-          </div>
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Failed</p>
-            <p className="font-mono text-rose-400">{metrics.metrics.missionsFailed}</p>
-          </div>
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Lead runs</p>
-            <p className="font-mono">{metrics.metrics.leadRuns}</p>
-          </div>
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Scheduled</p>
-            <p className="font-mono">{metrics.metrics.scheduledTasksRun}</p>
-          </div>
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Guardrail blocks</p>
-            <p className="font-mono text-rose-400">{metrics.metrics.guardrailBlocks}</p>
-          </div>
-          <div className="bg-slate-900 rounded p-2">
-            <p className="text-slate-500">Verifications</p>
-            <p className="font-mono">{metrics.metrics.verificationsRun}</p>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-4 rounded-lg border border-slate-700 p-3">
-        <h3 className="text-sm font-semibold mb-2">Event Log</h3>
-        <ul className="space-y-1 font-mono text-xs text-slate-300 max-h-32 overflow-auto">
-          {logs.length === 0 && <li>No events yet.</li>}
-          {logs.map((l, i) => (
-            <li key={i}>{l}</li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-```
-
-Import the new panel into `frontend/src/app/page.tsx`:
-
-```tsx
-import ObservabilityPanel from '@/components/ObservabilityPanel';
-
-// ... inside the return, after StatusPanel:
-<ObservabilityPanel />
-```
-
-This panel directly consumes the endpoints built in Chapter 20. If the cell server is offline, the panel will show the last known state and log fetch failures, but the rest of the dashboard will continue to render.
-
-### 6. Add a plan viewer panel
-
-The existing `page.tsx` already fetches a plan when the user clicks "Show Plan." In this chapter we promote that into a reusable component so the dashboard can later render plans automatically whenever a mission is active.
-
-Create `frontend/src/components/PlanPanel.tsx`:
-
-```tsx
-'use client';
-
-import { useState } from 'react';
-
-interface PlanStep {
-  id: string;
-  description: string;
-  tool?: string;
-  input?: string;
-}
-
-interface Plan {
-  missionId: string;
-  goal: string;
-  steps: PlanStep[];
-  reasoning: string;
-}
-
-interface Status {
-  mission?: { id: string; title: string };
-}
-
-export default function PlanPanel({ status }: { status: { mission?: { id: string; title: string } } | null }) {
-  const [plan, setPlan] = useState<Plan | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function fetchPlan() {
-    if (!status?.mission) {
-      setError('No active mission to plan for.');
-      return;
-    }
-    setError(null);
-    const res = await fetch('/api/cell/plan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        missionId: status.mission.id,
-        goal: status.mission.title,
-      }),
-    });
-    const data = await res.json();
-    if (data.ok && data.plan) {
-      setPlan(data.plan);
-    } else {
-      setError(data.error ?? 'Could not load plan');
-      setPlan(null);
-    }
-  }
-
-  return (
-    <section className="rounded-lg border border-slate-700 p-4 mb-6">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xl font-semibold">Current Plan</h2>
-        <button
-          onClick={fetchPlan}
-          className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 transition"
-        >
-          Show Plan
-        </button>
-      </div>
-      {error && (
-        <div className="rounded bg-rose-900/30 text-rose-300 p-3 text-sm mb-2">
-          {error}
-        </div>
-      )}
-      {plan ? (
-        <div className="text-sm">
-          <p className="text-slate-400 mb-2">{plan.reasoning}</p>
-          <ol className="list-decimal list-inside space-y-1">
-            {plan.steps.map((step) => (
-              <li key={step.id}>
-                {step.description}
-                {step.tool && (
-                  <span className="text-slate-400 ml-2">
-                    ({step.tool}: {step.input})
-                  </span>
-                )}
-              </li>
-            ))}
-          </ol>
-        </div>
-      ) : (
-        <p className="text-slate-400 text-sm">Click "Show Plan" to load the plan for the active mission.</p>
-      )}
-    </section>
-  );
-}
-```
-
-Import it into `frontend/src/app/page.tsx` and pass the current status:
-
-```tsx
-import PlanPanel from '@/components/PlanPanel';
-
-// ... replace the inline plan section with:
-<PlanPanel status={status} />
-```
-
-### 7. Add frontend build to the root verification pipeline
+### 8. Add frontend build to the root verification pipeline
 
 Until now the root `package.json` only verifies the cell. The dashboard must now be treated as a first-class citizen. Open `/Users/rajatjarvis/Downloads/projects/build-long-running-cell/package.json`:
 
@@ -694,9 +283,9 @@ Until now the root `package.json` only verifies the cell. The dashboard must now
 
 This is a small but important change. From now on, a broken import in the dashboard or a TypeScript error in a new panel will fail CI. The dashboard cannot drift out of sync with the cell.
 
-### 8. Add a dashboard route test
+### 9. Add a dashboard route test
 
-Create `frontend/src/lib/cell.test.ts`. The test verifies that `cellFetch` builds the right URL and that each API route returns a shape the dashboard expects. Because the test runs during the Next.js build process through TypeScript compilation, the most valuable test is a lightweight unit test on `cellFetch`.
+Create `frontend/src/lib/cell.test.ts`. The test verifies that `CELL_URL` has a sensible default and that the helper builds an HTTP URL. Because the test runs during the Next.js build process through TypeScript compilation, the most valuable test is a lightweight unit test on the shared config.
 
 ```ts
 import assert from 'node:assert';
@@ -726,7 +315,7 @@ test('status route returns an object with a state field', async () => {
 
 These tests assume the cell server is not running, so they assert that the route still returns a valid object (in this case `{ state: 'offline', error: ... }`). The important property is that the dashboard degrades rather than crashes.
 
-### 9. Add a frontend dev script and a cell dev note
+### 10. Add a frontend dev script and a cell dev note
 
 The dashboard needs the cell server running to be fully interactive. Add a small note to `frontend/README.md` (create it if it does not exist):
 
@@ -757,7 +346,7 @@ CELL_URL=https://cell.example.com npm run build
 ```
 ```
 
-This file already exists in the repo; append the `CELL_URL` note to the end.
+This file already exists in the repo; append the `CELL_URL` note to the end if it is not already there.
 
 ## Verification
 
@@ -809,6 +398,28 @@ Open http://localhost:3000 and verify that:
 2. **Wire the lead-engineer panel to specialists.** The existing dashboard already has a lead-engineer form. Extend it with a checkbox for `useSpecialists`. When checked, the request body includes `useSpecialists: true`, and the result panel shows which specialist kind ran each mission based on the `coordination.results[].name` field.
 
 3. **Add an environment indicator.** Add a small footer to the layout that displays the current `CELL_URL` and the dashboard build timestamp. This makes it immediately obvious in screenshots or support requests which cell instance the dashboard is pointing at.
+
+## Dashboard panels reference
+
+The dashboard is built from small, focused panels. Each one is self-contained and can be read independently:
+
+| Panel | File | What it shows | Added in |
+|-------|------|---------------|----------|
+| Cell Status | `frontend/src/components/StatusPanel.tsx` | State, active mission, tick/refresh buttons | Chapter 21 |
+| Budget & Metrics | `frontend/src/components/ObservabilityPanel.tsx` | Budget limits, counters, health | Chapter 21 |
+| Current Plan | `frontend/src/components/PlanPanel.tsx` | Planned steps for active mission | Chapter 21 |
+| Safety & Guardrails | inline in `frontend/src/app/page.tsx` | Guardrail check form and results | Chapter 19 |
+| Human-in-the-Loop | inline in `frontend/src/app/page.tsx` | Pending and resolved reviews | Chapter 22 |
+| Lead Engineer | inline in `frontend/src/app/page.tsx` | Goal decomposition and coordination | Chapter 14 |
+| Failure Learning | inline in `frontend/src/app/page.tsx` | Recent classified failures | Chapter 16 |
+| Memory & Summaries | inline in `frontend/src/app/page.tsx` | Retrieval, summary generation | Chapters 12, 17 |
+| Scheduling | inline in `frontend/src/app/page.tsx` | Cron tasks and backpressure | Chapter 18 |
+| Deployment & Uptime | `frontend/src/components/DeploymentPanel.tsx` | Health, version, uptime | Chapter 23 |
+| Capstone Orchestrator | `frontend/src/components/OrchestratorPanel.tsx` | End-to-end goal orchestration | Chapter 24 |
+| Evaluation Harness | `frontend/src/components/EvalPanel.tsx` | Benchmark runs and scores | Chapter 25 |
+| Verification Traces | `frontend/src/components/TracePanel.tsx` | Per-mission verification history | Chapter 26 |
+
+Because each panel lives in its own file or isolated section of `page.tsx`, the dashboard can be extended without rewriting existing code.
 
 ## Next chapter
 
