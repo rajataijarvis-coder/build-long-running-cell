@@ -2,6 +2,17 @@
 
 A hands-on course where each chapter builds a durable, self-evolving **agent cell** — a long-running autonomous unit that survives restarts, learns from failures, and communicates through a Next.js frontend.
 
+## Who this is for
+
+- Junior-to-mid developers who want to understand how autonomous agents work under the hood.
+- Anyone who has used ChatGPT/Claude but wants to build a system that keeps working while you sleep.
+- Engineers who want deterministic, testable agents instead of black-box prompts.
+
+You do **not** need a PhD in AI. You need:
+- Basic TypeScript/JavaScript
+- `git` and `npm`
+- Curiosity about state machines, HTTP APIs, and cron jobs
+
 ## What you will build
 
 By the end of the course you will have a **Cell** that:
@@ -12,6 +23,18 @@ By the end of the course you will have a **Cell** that:
 - Organises itself as a lead engineer + specialist cells
 - Speaks to a Next.js dashboard over HTTP + Server-Sent Events
 - Runs continuously via cron or a scheduler loop
+- Can optionally use an LLM (Ollama or OpenAI-compatible) for planning, reasoning, and decomposition
+
+## 30-second mental model
+
+A **Cell** is like a very careful intern:
+1. You give it a goal ("add a feature to this repo").
+2. It makes a plan.
+3. It acts one step at a time (read a file, edit it, run tests).
+4. It observes the result of each step.
+5. It reflects: continue, retry, or escalate.
+6. It only marks the mission done after verification passes.
+7. Everything it does is written to Git-backed memory, so it survives crashes.
 
 ## Course layout
 
@@ -42,7 +65,9 @@ By the end of the course you will have a **Cell** that:
 | 23 | Deployment — running 24/7 |
 | 24 | Capstone — orchestration |
 | 25 | Evaluation harness — measuring and improving the cell |
-| 26 | Verification traces — catching regressions before they compound |## Quick start
+| 26 | Verification traces — catching regressions before they compound |
+
+## Quick start
 
 ```bash
 cd cell
@@ -52,6 +77,60 @@ npm test
 npm run dev
 ```
 
-## Publishing pattern
+Then open a second terminal and run the dashboard:
 
-A cron job writes one chapter at a time, reads prior progress from `docs/TOC.md`, and pushes updates to the repo.
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The dashboard reads `CELL_URL` (default `http://localhost:3456`) to talk to the cell.
+
+## How to read this course
+
+1. Start with `chapters/01-cell-concepts` and `chapters/02-project-scaffold`.
+2. Read the chapter `README.md`, then look at the code files it references.
+3. Run the chapter’s verification command before moving on.
+4. When you get lost, check `docs/ARCHITECTURE.md` for the big picture and `docs/TOC.md` for the roadmap.
+
+## Key vocabulary
+
+- **Cell** — the autonomous agent. One mission, one durable loop.
+- **Mission** — a goal the cell is asked to achieve (e.g., "fix the bug in src/utils.ts").
+- **Plan** — a list of steps the cell will try.
+- **Thought / Action / Observation** — the ReAct loop: think, do, see what happened.
+- **Verification** — the gate that decides whether work is good enough.
+- **Git memory** — durable state stored in a Git repo so the cell resumes after crashes.
+- **Lead engineer** — breaks big goals into smaller missions.
+- **Specialist** — a cell that focuses on one kind of task (docs, tests, API code).
+- **Guardrails** — safety checks before destructive actions.
+- **HITL** — human-in-the-loop approval for risky steps.
+
+## Where the docs live
+
+- `docs/ARCHITECTURE.md` — the system architecture and design patterns, explained for junior devs.
+- `docs/TOC.md` — table of contents and chapter roadmap.
+- `chapters/` — one directory per chapter. Each has a `README.md` and the code it introduces.
+- `cell/src/` — the cell implementation.
+- `frontend/src/` — the Next.js dashboard.
+
+## Optional LLM mode
+
+The cell runs fine without an API key. If you want LLM-backed planning/reasoning, set:
+
+```bash
+# Local Ollama
+LLM_PROVIDER=ollama LLM_MODEL=llama3.1 npm run dev
+
+# OpenAI or OpenAI-compatible proxy
+LLM_PROVIDER=openai LLM_API_KEY=sk-... LLM_MODEL=gpt-4o-mini npm run dev
+```
+
+The rule-based paths are always used as a fallback if the LLM response cannot be parsed.
+
+## Need help?
+
+- Read `docs/ARCHITECTURE.md` next.
+- Run `npm run verify` from the repo root to check the whole stack.
+- Check the chapter `README.md` for the specific code path you are studying.

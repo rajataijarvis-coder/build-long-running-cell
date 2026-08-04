@@ -350,64 +350,258 @@ graph LR
 
 ## Design patterns used (plain language)
 
-If you are not comfortable with design-pattern terminology, think of them as recurring "shapes" that keep the codebase organised.
+If you are new to design patterns, do not worry about the fancy names. Each section below answers three questions:
 
-### State pattern — the cell is always in one state
+1. **What problem does it solve?**
+2. **What does the code actually look like?**
+3. **Where do I read more?**
 
-`Cell` uses `CellState = 'idle' | 'planning' | 'executing' | 'verifying' | 'reviewing'`. At any moment the cell is in exactly one of those states, and only certain transitions are allowed. This prevents the cell from trying to verify a mission it has not executed, or from running two missions at once in the same loop.
+Every snippet is simplified from the real source to highlight the shape of the pattern.
 
-- File: `cell/src/cell.ts`
-- Type: `cell/src/types.ts` (`CellState`)
+### State pattern — the cell is always in exactly one state
+
+**Problem:** Without clear states, the cell could try to verify a mission before running it, or run two missions at once.
+
+**Solution:** `CellState` is a fixed list of strings. The cell can only transition in allowed ways.
+
+```ts
+// cell/src/types.ts
+export type CellState = 'idle' | 'planning' | 'executing' | 'verifying' | 'reviewing' | 'paused';
+
+// cell/src/cell.ts
+async function tick() {
+  const memory = await this.memory.load();
+  if (memory.currentState === 'idle') {
+    await this.planMission();
+    memory.currentState = 'planning';
+  } else if (memory.currentState === 'planning') {
+    await this.executePlan();
+    memory.currentState = 'executing';
+  }
+  // ...
+  await this.memory.save(memory);
+}
+```
+
+**Why it matters:** Because the state is saved to Git memory after every change, a crash mid-mission resumes from the exact same state.
+
+- Chapter: 03 — The durable cell loop
+- File: `cell/src/cell.ts`, `cell/src/types.ts`
 
 ### Registry pattern — looking up tools by name
 
-A `ToolRegistry` stores tools under string names (`'read_file'`, `'edit_file'`, `'shell'`, `'verify'`). The `Actor` asks the registry for the tool by name and runs it. Adding a new tool does not require editing the actor; you register it once and every part of the system can use it.
+**Problem:** Tools (`read_file`, `edit_file`, `shell`) are scattered. The actor should not hard-code every tool.
 
-- File: `cell/src/tools.ts`
+**Solution:** Register tools under string names, then look them up at runtime.
+
+```ts
+// cell/src/tools.ts
+export class ToolRegistryImpl implements ToolRegistry {
+  private tools = new Map<string, Tool>();
+
+  register(tool: Tool) {
+    this.tools.set(tool.name, tool);
+  }
+
+  resolve(name: string): Tool | undefined {
+    return this.tools.get(name);
+  }
+}
+
+// cell/src/actor.ts
+async act(thought: Thought) {
+  const tool = this.registry.resolve(thought.action.tool);
+  if (!tool) throw new Error(`Unknown tool: ${thought.action.tool}`);
+  return await tool.execute(thought.action.input);
+}
+```
+
+**Why it matters:** Adding a new tool is a one-line `registry.register(new MyTool())`. Nothing else in the cell changes.
+
+- Chapter: 09 — ReAct: Reasoning + Tool Use
+- File: `cell/src/tools.ts`, `cell/src/actor.ts`
 
 ### Strategy pattern — picking the right runner for the job
 
-The `Coordinator` decides which `Specialist` should run a mission based on the mission type (`'docs'`, `'tests'`, `'api'`, `'code'`). Each specialist implements the same interface but behaves differently. This is the strategy pattern: same contract, interchangeable implementations.
+**Problem:** A docs mission and a test mission need different behaviour, but the coordinator should treat them the same.
 
-- Files: `cell/src/coordinator.ts`, `cell/src/specialist.ts`
+**Solution:** Each specialist implements the same interface, and the coordinator picks one based on the mission type.
+
+```ts
+// cell/src/specialist.ts
+export interface Specialist {
+  canHandle(mission: Mission): boolean;
+  run(mission: Mission): Promise<MissionResult>;
+}
+
+export class DocsSpecialist implements Specialist {
+  canHandle(mission) { return mission.taskType === 'docs'; }
+  async run(mission) { /* update README, run docs lint */ }
+}
+
+// cell/src/coordinator.ts
+const specialist = this.specialists.find((s) => s.canHandle(mission));
+const result = await specialist.run(mission);
+```
+
+**Why it matters:** You can add a `SecuritySpecialist` later without touching the coordinator logic.
+
+- Chapter: 15 — Specialist cells
+- File: `cell/src/coordinator.ts`, `cell/src/specialist.ts`
 
 ### Repository pattern — durable storage as a service
 
-`GitMemory` hides the fact that state is stored in Git-backed JSON files. The rest of the code calls `memory.load()` and `memory.save(cell)` without knowing where the files live. If you later want to store state in SQLite or Postgres, you only change `GitMemory`, not the whole cell.
+**Problem:** Scattered file reads/writes make it hard to change how state is stored.
 
+**Solution:** `GitMemory` hides the fact that state lives in `state/memory.json` inside a Git repo.
+
+```ts
+// cell/src/git-memory.ts
+export class GitMemory {
+  async load(): Promise<CellMemory> {
+    const raw = await fs.readFile(this.memoryPath(), 'utf-8');
+    return JSON.parse(raw);
+  }
+
+  async save(memory: CellMemory, commitMessage?: string): Promise<void> {
+    await fs.writeFile(this.memoryPath(), JSON.stringify(memory, null, 2));
+    this.gitCommit(commitMessage ?? 'checkpoint');
+  }
+}
+```
+
+**Why it matters:** The rest of the cell calls `memory.load()` and `memory.save()`. If you later switch to SQLite, only `GitMemory` changes.
+
+- Chapter: 04 — Git as memory
 - File: `cell/src/git-memory.ts`
 
 ### Observer pattern — collecting metrics without tangling code
 
-`Observability` exposes `increment(counter)` and `snapshot()`. Subsystems call `increment('missionsCompleted')` when something happens. The dashboard later reads the snapshot. The subsystems do not need to know about the dashboard; they just emit events.
+**Problem:** Subsystems should record metrics without knowing about dashboards or databases.
 
+**Solution:** A central `Observability` object receives counters. Subsystems emit; dashboards read.
+
+```ts
+// cell/src/observability.ts
+export class Observability {
+  async increment(counter: MetricCounter): Promise<void> {
+    const snapshot = await this.load();
+    snapshot[counter] = (snapshot[counter] ?? 0) + 1;
+    await this.save(snapshot);
+  }
+}
+
+// Anywhere in the cell
+await this.observability.increment('missionsCompleted');
+```
+
+**Why it matters:** The cell does not need to know the dashboard exists. It just counts events.
+
+- Chapter: 20 — Budget, cost, and observability
 - File: `cell/src/observability.ts`
 
 ### Maker / checker pattern — one agent proposes, another verifies
 
-In the multi-loop chapter, a `Maker` produces a code change and a `Checker` runs verification on it. Only if the checker passes is the proposal accepted. This pattern separates creation from validation and catches mistakes before they reach memory.
+**Problem:** A single agent can convince itself that bad code is good.
 
-- File: `cell/src/loop-engine.ts` / multi-loop code paths
+**Solution:** A `Maker` produces a change, then a separate `Checker` runs verification. Only passing changes are accepted.
+
+```ts
+// cell/src/network.ts (simplified)
+async run(missionId: string, task: string) {
+  for (let round = 1; round <= this.maxRounds; round++) {
+    const makerResult = await this.maker.run(task, { missionId, round });
+    const checkerResult = await this.checker.run('', {
+      missionId,
+      round,
+      makerResult,
+    });
+    if (checkerResult.verdict === 'approve') {
+      return { approved: true, result: makerResult };
+    }
+  }
+  return { approved: false };
+}
+```
+
+**Why it matters:** Creation and validation are separate. The checker can be stricter over time without changing the maker.
+
+- Chapter: 11 — Maker / Checker Subagents
+- File: `cell/src/network.ts`
 
 ### Coordinator / worker pattern — one dispatcher, many isolated workers
 
-`Coordinator` takes a batch of missions and dispatches each one to a `Specialist` running in a separate Git worktree. The worktrees are isolated, so a failing mission cannot corrupt the main workspace.
+**Problem:** Parallel missions can overwrite each other’s files.
 
-- Files: `cell/src/coordinator.ts`, `cell/src/worktree.ts`
+**Solution:** The coordinator gives each mission its own Git worktree. Work is isolated; only successful results are merged back.
+
+```ts
+// cell/src/coordinator.ts (simplified)
+async coordinate(missions: Mission[]) {
+  for (const mission of missions) {
+    const worktree = await this.worktree.create(mission.id);
+    const specialist = this.pickSpecialist(mission);
+    const result = await specialist.run(mission, worktree.path);
+    if (result.success) {
+      await this.worktree.merge(worktree, mission.id);
+    }
+  }
+}
+```
+
+**Why it matters:** A failing mission cannot corrupt the main workspace or other missions.
+
+- Chapter: 13 — Multi-Loop Coordination
+- File: `cell/src/coordinator.ts`, `cell/src/worktree.ts`
 
 ### Adapter / provider pattern — interchangeable backends
 
-`ToolRegistry` already uses this idea: tools are looked up by name and can be swapped without changing the actor. The same pattern applies to LLM providers, embedding models, or different memory stores: the cell talks to an interface, not a concrete vendor.
+**Problem:** The cell should not be locked to one LLM vendor or memory store.
 
-The course keeps a rule-based baseline so it runs without API keys, but the architecture is ready for a provider implementation. `cell/src/llm/types.ts` defines the `LLMProvider` interface. Concrete providers live in `cell/src/llm/ollama-provider.ts` (local Ollama) and `cell/src/llm/openai-provider.ts` (OpenAI-compatible APIs, including proxies). `cell/src/llm/factory.ts` creates a provider from environment variables or returns `undefined` to keep the cell rule-based.
+**Solution:** Define an interface; concrete providers implement it. The cell talks to the interface.
 
-When a provider is configured, `Planner.plan`, `Reasoner.reason`, and `LeadEngineer.decompose` ask the LLM first and fall back to the existing rule-based paths if the response is unparseable. This means students can run the entire course locally, then flip one environment variable to add LLM intelligence without changing the cell logic.
+```ts
+// cell/src/llm/types.ts
+export interface LLMProvider {
+  name: string;
+  complete(options: { messages: LLMMessage[] }): Promise<LLMResponse>;
+}
 
-- File: `cell/src/tools.ts` (registry), `cell/src/types.ts` (interfaces), `cell/src/llm/` (provider layer)
+// cell/src/llm/ollama-provider.ts
+export class OllamaProvider implements LLMProvider {
+  name = 'ollama';
+  async complete(options) {
+    const res = await fetch(`${this.baseUrl}/api/chat`, { /* ... */ });
+    return { text: /* parsed response */ };
+  }
+}
+
+// cell/src/llm/factory.ts
+export function createLLMProvider(config?: LLMProviderConfig): LLMProvider | undefined {
+  if (!config || config.provider === 'none') return undefined;
+  if (config.provider === 'ollama') return new OllamaProvider(config);
+  if (config.provider === 'openai') return new OpenAIProvider(config);
+  throw new Error(`Unknown LLM provider: ${config.provider}`);
+}
+```
+
+**Why it matters:** You can switch from Ollama to OpenAI by changing one environment variable. The planner, reasoner, and lead engineer never change.
+
+- Chapter: 08 / 14 (with LLM notes)
+- Files: `cell/src/llm/types.ts`, `cell/src/llm/factory.ts`, `cell/src/llm/ollama-provider.ts`, `cell/src/llm/openai-provider.ts`
 
 ### Environment-driven configuration
 
-The cell reads `LLM_PROVIDER` to decide whether to use an LLM and which vendor to call:
+**Problem:** Hard-coded API keys and model names make the course brittle.
+
+**Solution:** `Cell` reads environment variables and creates an LLM provider only when configured.
+
+```ts
+// cell/src/cell.ts (simplified)
+const llm = config.llm ?? createLLMProviderFromEnv();
+this.planner = new Planner({ maxSteps: config.maxRetries, llm });
+this.reasoner = new Reasoner(config.reasonerOptions, defaultRegistry, llm);
+```
 
 ```bash
 # Rule-based baseline (default)
@@ -421,6 +615,8 @@ LLM_PROVIDER=openai LLM_API_KEY=sk-... LLM_MODEL=gpt-4o-mini npm run dev
 ```
 
 Optional variables: `LLM_BASE_URL`, `LLM_TEMPERATURE`, `LLM_MAX_TOKENS`.
+
+**Why it matters:** Students can run the entire course without an API key. One env var adds LLM intelligence; the rule-based paths remain as a fallback.
 
 ## State machine
 
