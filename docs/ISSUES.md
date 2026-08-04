@@ -42,7 +42,7 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 
 **Problem:** The `/plan` endpoint constructs `new Planner()` with no options. The `Planner` inside `Cell` is configured with `maxSteps`, `llm`, etc. The HTTP endpoint silently falls back to the rule-based planner, even when `LLM_PROVIDER=openai` is set.
 
-**Fix:** Either expose a `planner` from `Cell` (add a getter), or build a `Planner` in `ServerContext` using the same LLM factory, and use that in `/plan`.
+**Status:** Fixed in commit `fff5b30`. Added `Cell.getPlanner()` and updated the `/plan` endpoint to use it. Removed the unused `Planner` import from `server.ts`.
 
 **Files:** `cell/src/server.ts`, `cell/src/cell.ts`
 
