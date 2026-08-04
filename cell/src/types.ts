@@ -279,4 +279,50 @@ export interface CellMemory {
   failures?: FailureRecord[];
   /** Curated summaries that compress long memory sequences into compact context. */
   summaries?: MemorySummary[];
+  /** Runtime budget and cost counters. */
+  budget?: Budget;
+  /** Observable health and performance counters. */
+  metrics?: MetricSnapshot;
+}
+
+export interface Budget {
+  /** Maximum tokens the cell may consume before pausing. 0 means unlimited. */
+  tokenLimit: number;
+  /** Estimated maximum cost in the configured currency before pausing. 0 means unlimited. */
+  costLimit: number;
+  /** Maximum total runtime in milliseconds before pausing. 0 means unlimited. */
+  elapsedMsLimit: number;
+  /** Tokens consumed so far. */
+  currentTokens: number;
+  /** Estimated cost consumed so far. */
+  currentCost: number;
+  /** Total elapsed milliseconds since the first budget record. */
+  elapsedMs: number;
+  /** ISO timestamp of the last budget update. */
+  lastUpdatedAt: string;
+  /** Currency symbol for cost, e.g. 'USD'. */
+  currency: string;
+  /** Estimated cost per 1k tokens. */
+  costPer1kTokens: number;
+}
+
+export interface MetricSnapshot {
+  /** ISO timestamp when the snapshot was taken. */
+  timestamp: string;
+  /** Number of cell ticks since startup. */
+  ticks: number;
+  /** Number of missions that reached status 'done'. */
+  missionsCompleted: number;
+  /** Number of missions that reached status 'failed'. */
+  missionsFailed: number;
+  /** Number of lead-engineer runs executed. */
+  leadRuns: number;
+  /** Number of scheduled tasks that fired. */
+  scheduledTasksRun: number;
+  /** Number of actions blocked by guardrails. */
+  guardrailBlocks: number;
+  /** Number of verification invocations. */
+  verificationsRun: number;
+  /** Current memory document count estimate. */
+  memoryDocumentCount: number;
 }

@@ -3,6 +3,7 @@ import type { Mission, Tool, LeadRun } from './types.js';
 import type { Reasoner } from './reasoner.js';
 import type { Reflector } from './reflector.js';
 import { GitMemory, FailureMemory } from './git-memory.js';
+import { Observability } from './observability.js';
 
 export interface LeadEngineerOptions {
   basePath: string;
@@ -19,6 +20,8 @@ export interface LeadEngineerOptions {
   memory?: GitMemory;
   /** Optional failure memory for learning from prior failures. */
   failureMemory?: FailureMemory;
+  /** Optional observability collector to increment the lead-runs counter. */
+  observability?: Observability;
 }
 
 export interface DecomposedMission {
@@ -149,6 +152,10 @@ export class LeadEngineer {
         failed: coordination.failed.map((f) => f.missionId),
       };
       await this.options.memory.recordLeadRun(run);
+    }
+
+    if (this.options.observability) {
+      await this.options.observability.increment('leadRuns');
     }
 
     return {

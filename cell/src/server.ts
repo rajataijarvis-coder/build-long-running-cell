@@ -17,9 +17,11 @@ import { GitMemory, FailureMemory } from './git-memory.js';
 import { MemorySummariser, SummaryMemory } from './summary.js';
 import { Scheduler } from './scheduler.js';
 import { Guardrails, hashAction } from './guardrails.js';
+import { BudgetTracker } from './budget.js';
+import { Observability } from './observability.js';
 import type { JournalEntry, Mission } from './types.js';
 
-export function startServer(cell: Cell, port = 3456) {
+export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, observability?: Observability) {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
     res.setHeader('Content-Type', 'application/json');
@@ -38,6 +40,46 @@ export function startServer(cell: Cell, port = 3456) {
       });
 
     try {
+      if (url.pathname === '/budget') {
+        const tracker = budget ?? new BudgetTracker({ basePath: process.cwd() });
+        if (req.method === 'GET') {
+          const status = await tracker.check();
+          res.end(JSON.stringify({ ok: status.ok, reason: status.reason, budget: status.budget }));
+          return;
+        }
+        if (req.method === 'POST') {
+          const body = await readBody();
+          if (body.reset === true) {
+            const updated = await tracker.reset();
+            res.end(JSON.stringify({ ok: true, budget: updated }));
+            return;
+          }
+          const updated = await tracker.setLimits({
+            tokenLimit: body.tokenLimit !== undefined ? Number(body.tokenLimit) : undefined,
+            costLimit: body.costLimit !== undefined ? Number(body.costLimit) : undefined,
+            elapsedMsLimit: body.elapsedMsLimit !== undefined ? Number(body.elapsedMsLimit) : undefined,
+            costPer1kTokens: body.costPer1kTokens !== undefined ? Number(body.costPer1kTokens) : undefined,
+          });
+          res.end(JSON.stringify({ ok: true, budget: updated }));
+          return;
+        }
+      }
+
+      if (url.pathname === '/metrics') {
+        const metrics = observability ?? new Observability({ basePath: process.cwd() });
+        if (req.method === 'GET') {
+          const snapshot = await metrics.snapshot();
+          const health = metrics.health(snapshot);
+          res.end(JSON.stringify({ ok: true, health, metrics: snapshot }));
+          return;
+        }
+        if (req.method === 'POST') {
+          const snapshot = await metrics.reset();
+          res.end(JSON.stringify({ ok: true, metrics: snapshot }));
+          return;
+        }
+      }
+
       if (url.pathname === '/status') {
         const mission = await cell.currentMission();
         const state = await cell.state();
@@ -74,7 +116,7 @@ export function startServer(cell: Cell, port = 3456) {
           ['npm', ['run', 'lint']],
           ['npm', ['run', 'build']],
           ['npm', ['test']],
-        ]);
+        ], { observability });
         res.statusCode = summary.passed ? 200 : 500;
         res.end(JSON.stringify({ ok: summary.passed, summary }));
         return;
@@ -324,6 +366,7 @@ export function startServer(cell: Cell, port = 3456) {
           return;
         }
         const failureMemory = new FailureMemory(new GitMemory(process.cwd()));
+        const leadObservability = observability ?? new Observability({ basePath: process.cwd() });
         const lead = new LeadEngineer({
           basePath: process.cwd(),
           verificationCommands: [
@@ -337,6 +380,7 @@ export function startServer(cell: Cell, port = 3456) {
           useSpecialists: Boolean(body.useSpecialists),
           memory: new GitMemory(process.cwd()),
           failureMemory,
+          observability: leadObservability,
         });
         const result = await lead.execute(goal);
         res.end(JSON.stringify({ ok: true, result }));
@@ -345,6 +389,8 @@ export function startServer(cell: Cell, port = 3456) {
 
       if (url.pathname === '/schedule' && req.method === 'POST') {
         const body = await readBody();
+        const schedulerBudget = budget ?? new BudgetTracker({ basePath: process.cwd() });
+        const schedulerObs = observability ?? new Observability({ basePath: process.cwd() });
         const scheduler = new Scheduler({
           basePath: process.cwd(),
           verificationCommands: [
@@ -352,6 +398,8 @@ export function startServer(cell: Cell, port = 3456) {
             ['npm', ['run', 'build']],
             ['npm', ['test']],
           ],
+          budget: schedulerBudget,
+          observability: schedulerObs,
         });
         const task = await scheduler.schedule({
           name: String(body.name ?? 'scheduled-task'),
@@ -374,7 +422,13 @@ export function startServer(cell: Cell, port = 3456) {
 
       const runTaskMatch = url.pathname.match(/^\/tasks\/([^/]+)\/run$/);
       if (runTaskMatch && req.method === 'POST') {
-        const scheduler = new Scheduler({ basePath: process.cwd() });
+        const schedulerBudget = budget ?? new BudgetTracker({ basePath: process.cwd() });
+        const schedulerObs = observability ?? new Observability({ basePath: process.cwd() });
+        const scheduler = new Scheduler({
+          basePath: process.cwd(),
+          budget: schedulerBudget,
+          observability: schedulerObs,
+        });
         const result = await scheduler.runTask(runTaskMatch[1]);
         res.end(JSON.stringify({ ok: !result.error, result }));
         return;

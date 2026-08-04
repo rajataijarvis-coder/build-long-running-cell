@@ -4,6 +4,8 @@ import type { ScheduledTask } from './types.js';
 import { GitMemory } from './git-memory.js';
 import { LeadEngineer } from './lead.js';
 import { runVerificationSuite } from './verify.js';
+import { BudgetTracker } from './budget.js';
+import { Observability } from './observability.js';
 
 export interface SchedulerOptions {
   basePath: string;
@@ -15,6 +17,10 @@ export interface SchedulerOptions {
   timezone?: string;
   /** Verification commands used when a task fires with action='verify'. */
   verificationCommands?: [string, string[]][];
+  /** Optional budget tracker to gate scheduled work. */
+  budget?: BudgetTracker;
+  /** Optional observability collector. */
+  observability?: Observability;
 }
 
 export interface SchedulerState {
@@ -55,6 +61,9 @@ export class Scheduler {
   private readonly verificationCommands: [string, string[]][];
   private stateCache?: SchedulerState;
 
+  private readonly budget?: BudgetTracker;
+  private readonly observability?: Observability;
+
   constructor(options: SchedulerOptions) {
     this.basePath = options.basePath;
     this.maxConcurrency = options.maxConcurrency ?? 1;
@@ -65,6 +74,8 @@ export class Scheduler {
       ['npm', ['run', 'build']],
       ['npm', ['test']],
     ];
+    this.budget = options.budget;
+    this.observability = options.observability;
   }
 
   private statePath(): string {
@@ -209,9 +220,20 @@ export class Scheduler {
   }
 
   private async execute(task: ScheduledTask, state: SchedulerState, now: number): Promise<ScheduleResult> {
+    if (this.budget) {
+      const status = await this.budget.check();
+      if (!status.ok) {
+        return { taskId: task.id, ran: false, error: `budget exceeded: ${status.reason}` };
+      }
+    }
+
     state.inFlight.push(task.id);
     state.lastStartAt = new Date(now).toISOString();
     await this.saveState(state);
+
+    if (this.observability) {
+      await this.observability.increment('scheduledTasksRun');
+    }
 
     let output: unknown;
     let error: string | undefined;

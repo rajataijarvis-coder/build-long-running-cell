@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import type { Observability } from './observability.js';
 import type { VerificationResult, VerificationSummary } from './types.js';
 
 export interface VerifyOptions {
@@ -6,6 +7,8 @@ export interface VerifyOptions {
   timeoutMs?: number;
   /** Maximum number of bytes to keep from stdout + stderr combined. */
   maxBuffer?: number;
+  /** Optional observability collector to increment the verifications-run counter. */
+  observability?: Observability;
 }
 
 /**
@@ -105,6 +108,9 @@ export async function runVerificationSuite(
 
   for (const [cmd, args] of commands) {
     const result = await verify(cmd, args, verifyOptions);
+    if (options.observability) {
+      await options.observability.increment('verificationsRun');
+    }
     results.push(result);
     if (!result.passed) {
       passed = false;

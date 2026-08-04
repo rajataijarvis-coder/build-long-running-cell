@@ -9,7 +9,9 @@ import { Reflector } from './reflector.js';
 import { Guardrails, guardTools } from './guardrails.js';
 import { MemoryStore } from './memory-store.js';
 import { RetrievalEngine } from './retrieval.js';
-import type { CellState, JournalEntry, Mission, Tool, ToolRegistry, ReasonerOptions, ReflectorOptions } from './types.js';
+import { BudgetTracker } from './budget.js';
+import { Observability } from './observability.js';
+import type { CellState, JournalEntry, Mission, Tool, ToolRegistry, ReasonerOptions, ReflectorOptions, Budget, MetricSnapshot } from './types.js';
 
 export interface CellConfig {
   basePath: string;
@@ -25,6 +27,10 @@ export interface CellConfig {
   memoryStore?: MemoryStore;
   /** Optional guardrail configuration. If omitted, guardrails are still enabled with sensible defaults. */
   guardrails?: ConstructorParameters<typeof Guardrails>[0];
+  /** Optional budget tracker. If omitted, budgets are tracked with unlimited defaults. */
+  budget?: BudgetTracker;
+  /** Optional observability collector. If omitted, metrics are tracked in memory only. */
+  observability?: Observability;
 }
 
 export class Cell {
@@ -37,18 +43,25 @@ export class Cell {
   private reflector: Reflector;
   private memoryStore: MemoryStore;
   private retrieval: RetrievalEngine;
+  private budget: BudgetTracker;
+  private observability: Observability;
 
   constructor(config: CellConfig) {
     this.config = config;
     this.memory = new GitMemory(config.basePath);
     this.journal = new ExecutionJournal(config.basePath);
     this.planner = new Planner({ maxSteps: config.maxRetries });
+    this.memoryStore = config.memoryStore ?? new MemoryStore({ basePath: config.basePath });
+    this.retrieval = config.retrieval ?? new RetrievalEngine({ topK: 5 });
+    this.budget = config.budget ?? new BudgetTracker({ basePath: config.basePath });
+    this.observability = config.observability ?? new Observability({ basePath: config.basePath });
 
     const guardrails = new Guardrails(config.guardrails ?? {
       workspacePath: config.basePath,
       defaultAllowList: config.shellAllowList,
       requireApprovalForDestructive: true,
       approvedDestructive: new Set<string>(),
+      observability: this.observability,
     });
 
     const customTools = config.tools ?? [];
@@ -67,9 +80,6 @@ export class Cell {
 
     this.reasoner = config.reasoner ?? new Reasoner(config.reasonerOptions ?? { maxSteps: config.maxRetries }, defaultRegistry);
     this.reflector = config.reflector ?? new Reflector(config.reflectorOptions ?? { maxAttempts: config.maxRetries });
-
-    this.memoryStore = config.memoryStore ?? new MemoryStore({ basePath: config.basePath });
-    this.retrieval = config.retrieval ?? new RetrievalEngine({ topK: 5 });
 
     this.loopEngine = new LoopEngine(
       guardTools(customTools, guardrails),
@@ -96,7 +106,25 @@ export class Cell {
     return this.memory.addMission(title, description);
   }
 
+  async budgetStatus(): Promise<{ ok: boolean; reason?: string; budget: Budget }> {
+    return this.budget.check();
+  }
+
+  async metrics(): Promise<MetricSnapshot> {
+    return this.observability.snapshot();
+  }
+
   async tick(): Promise<void> {
+    const budgetStatus = await this.budget.check();
+    if (!budgetStatus.ok) {
+      const mem = await this.memory.load();
+      mem.currentState = 'paused';
+      await this.memory.save(mem);
+      await this.memory.logProgress(`Paused: ${budgetStatus.reason}`);
+      return;
+    }
+
+    const tickStart = Date.now();
     const mem = await this.memory.load();
 
     if (mem.currentState === 'idle') {
@@ -129,6 +157,7 @@ export class Cell {
     await this.memory.save(mem);
 
     try {
+      await this.observability.increment('ticks');
       switch (mem.currentState) {
         case 'planning':
           await this.runPhase(mission, 'planning', async () => {
@@ -209,7 +238,7 @@ export class Cell {
           break;
         case 'verifying':
           await this.runPhase(mission, 'verifying', async () => {
-            const summary = await runVerificationSuite(this.config.verificationCommands);
+            const summary = await runVerificationSuite(this.config.verificationCommands, { observability: this.observability });
             if (!summary.passed) {
               const failed = summary.results.find((r) => !r.passed)!;
               throw new Error(`Verification failed: ${failed.command}\n${failed.stderr}`);
@@ -225,21 +254,33 @@ export class Cell {
           mission.status = 'done';
           mem.currentState = 'idle';
           mem.currentMissionId = undefined;
+          await this.observability.increment('missionsCompleted');
           break;
       }
+    } catch (err) {
+      if (mission && mission.status === 'in_progress') {
+        mission.status = 'failed';
+        await this.observability.increment('missionsFailed');
+      }
+      await this.memory.save(mem);
+      throw err;
     } finally {
+      await this.budget.recordElapsed(Date.now() - tickStart);
       await this.memory.save(mem);
     }
   }
 
   private async runPhase(mission: Mission, state: CellState, fn: () => Promise<void>): Promise<void> {
     const run = await this.journal.start(mission.id, state);
+    const phaseStart = Date.now();
     try {
       await fn();
       await this.journal.finish(run.id, 'success');
     } catch (err) {
       await this.journal.finish(run.id, 'failure', (err as Error).message);
       throw err;
+    } finally {
+      await this.budget.recordElapsed(Date.now() - phaseStart);
     }
   }
 

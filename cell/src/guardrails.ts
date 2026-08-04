@@ -1,4 +1,5 @@
 import type { Action, Tool } from './types.js';
+import type { Observability } from './observability.js';
 
 /**
  * A safety policy describes a rule, a detector that decides whether an action
@@ -32,6 +33,8 @@ export interface GuardrailOptions {
   requireApprovalForDestructive?: boolean;
   /** Set of approved destructive action names / hashes. */
   approvedDestructive?: Set<string>;
+  /** Optional observability collector to increment the guardrail-blocks counter. */
+  observability?: Observability;
 }
 
 /**
@@ -64,6 +67,9 @@ export class Guardrails {
     for (const rule of rules) {
       const matches = this.detector(rule.detector)(action);
       if (matches) {
+        if (this.options.observability) {
+          void this.options.observability.increment('guardrailBlocks');
+        }
         return {
           ok: false,
           rule,
