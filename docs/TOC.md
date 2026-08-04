@@ -1,5 +1,8 @@
 # Table of Contents
 
+- [Course overview](../README.md)
+- [System architecture](ARCHITECTURE.md)
+
 ## Part 1 — Foundations
 
 - [01 - Cell concepts](../chapters/01-cell-concepts/)
