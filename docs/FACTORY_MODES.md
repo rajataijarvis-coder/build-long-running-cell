@@ -42,23 +42,30 @@ A lit factory is the default mode of the cell. Agents do most of the building, b
 
 ### Default lit configuration
 
-The cell starts in lit mode with this configuration in `cell/src/main.ts`:
+The default `cell/src/main.ts` starts the cell in lit mode using `createLitFactoryContext(...)` from `cell/src/factory.ts`:
 
 ```ts
-const cell = new Cell({
-  basePath,
-  verificationCommands,
-  maxRetries: 3,
-  budget,
-  observability,
-  // hitl is omitted, so a default HumanInTheLoop is created
-  // guardrails default to requiring approval for destructive actions
+import { startServer } from './server.js';
+import { createLitFactoryContext } from './factory.js';
+
+const context = createLitFactoryContext({
+  basePath: process.cwd(),
+  verificationCommands: [
+    ['npm', ['run', 'lint']],
+    ['npm', ['run', 'build']],
+    ['npm', ['test']],
+  ],
 });
+
+startServer(context, 3456);
 ```
 
-If you want to be explicit, you can pass a strict `HumanInTheLoop`:
+`createLitFactoryContext` builds one set of shared services (`Guardrails`, `HumanInTheLoop`, `MemoryStore`, etc.) and wires them into both `Cell` and the HTTP server so the dashboard and the autonomous loop agree on every safety gate.
+
+If you want to be explicit, you can still build the cell manually:
 
 ```ts
+import { Cell } from './cell.js';
 import { HumanInTheLoop } from './hitl.js';
 
 const cell = new Cell({
@@ -101,7 +108,24 @@ The cell can run in dark mode because all the safety layers are configurable. Yo
 
 ### How to configure dark mode
 
-There is no single `DARK_MODE=true` flag. Instead, you relax each gate:
+The easiest way to run in dark mode is the dedicated dark-factory entry point:
+
+```bash
+cd cell
+npm run build
+npm run start:dark
+```
+
+Or during development with auto-reload:
+
+```bash
+cd cell
+npm run dev:dark
+```
+
+These scripts start `cell/src/main-dark.ts`, which is built by `createDarkFactoryContext({...})` in `cell/src/factory.ts`. The helper disables the human-in-the-loop gate and auto-approves destructive actions, **while still enforcing verification, budgets, Git memory, and guardrails for path traversal / prompt injection**.
+
+If you want to assemble dark mode yourself, relax each gate manually:
 
 #### 1. Disable human-in-the-loop
 
@@ -196,7 +220,35 @@ The `Planner`, `Reasoner`, and `LeadEngineer` will use the LLM. If the LLM respo
 
 ### Full dark-factory example
 
-Here is a self-contained dark-mode bootstrap:
+The simplest dark-factory bootstrap is the built-in entry point:
+
+```bash
+cd cell
+npm run build
+npm run start:dark
+```
+
+Under the hood, `cell/src/main-dark.ts` calls:
+
+```ts
+import { startServer } from './server.js';
+import { createDarkFactoryContext } from './factory.js';
+
+const context = createDarkFactoryContext({
+  basePath: process.cwd(),
+  verificationCommands: [
+    ['npm', ['run', 'lint']],
+    ['npm', ['run', 'build']],
+    ['npm', ['test']],
+  ],
+});
+
+startServer(context, 3456);
+```
+
+`createDarkFactoryContext` disables the HITL gate and turns off destructive-action approval, but it keeps the same `BudgetTracker`, `Observability`, `MemoryStore`, and `RetrievalEngine` as the lit factory. Verification still runs after every plan.
+
+For a fully custom dark mode, you can still assemble the services manually:
 
 ```ts
 // cell/src/dark-mode.ts (example file, not in the default build)
@@ -205,7 +257,7 @@ import { startServer } from './server.js';
 import { BudgetTracker } from './budget.js';
 import { Observability } from './observability.js';
 import { HumanInTheLoop } from './hitl.js';
-import { Guardrails, guardTools } from './guardrails.js';
+import { Guardrails } from './guardrails.js';
 import {
   ShellTool,
   ReadFileTool,
@@ -229,15 +281,12 @@ const guardrails = new Guardrails({
   requireApprovalForDestructive: false,
 });
 
-const tools = guardTools(
-  [
-    new ShellTool({ allowList: ['npm', 'node', 'git', 'rm', 'mv', 'cp', 'ls', 'echo'] }),
-    new ReadFileTool(basePath),
-    new EditFileTool(basePath),
-    new VerifyTool(verificationCommands),
-  ],
-  guardrails
-);
+const tools = new ToolRegistryImpl([
+  new ShellTool({ allowList: ['npm', 'node', 'git', 'rm', 'mv', 'cp', 'ls', 'echo'] }),
+  new ReadFileTool(basePath),
+  new EditFileTool(basePath),
+  new VerifyTool(verificationCommands),
+]);
 
 const cell = new Cell({
   basePath,
