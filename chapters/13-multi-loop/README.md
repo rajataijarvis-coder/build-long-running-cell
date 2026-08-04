@@ -1,5 +1,7 @@
 # Chapter 13: Multi-Loop Coordination
 
+> **Note:** In the course repository the files shown in this chapter already exist. This chapter explains how and why they are built. If you are following along from scratch, create the files as described.
+
 ## Learning goals
 
 By the end of this chapter you will be able to:
