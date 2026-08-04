@@ -397,9 +397,9 @@ In the multi-loop chapter, a `Maker` produces a code change and a `Checker` runs
 
 ### Adapter / provider pattern — interchangeable backends
 
-`ToolRegistry` already uses this idea: tools are looked up by name and can be swapped without changing the actor. The same pattern applies to LLM providers, embedding models, or different memory stores: the cell talks to an interface, not a concrete vendor. This course keeps the baseline rule-based so it runs without API keys, but the architecture is ready for a provider implementation.
+`ToolRegistry` already uses this idea: tools are looked up by name and can be swapped without changing the actor. The same pattern applies to LLM providers, embedding models, or different memory stores: the cell talks to an interface, not a concrete vendor. The course keeps a rule-based baseline so it runs without API keys, but the architecture is ready for a provider implementation. `cell/src/llm/types.ts` defines the `LLMProvider` interface, and concrete providers (Ollama, OpenAI-compatible) can be added without changing the planner, reasoner, or lead engineer.
 
-- File: `cell/src/tools.ts` (registry), `cell/src/types.ts` (interfaces)
+- File: `cell/src/tools.ts` (registry), `cell/src/types.ts` (interfaces), `cell/src/llm/types.ts` (LLM provider interface)
 
 ## State machine
 

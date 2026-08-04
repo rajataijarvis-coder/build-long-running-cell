@@ -49,43 +49,44 @@ This file tracks known mismatches between chapter documentation and the actual c
 - **Problem:** The course is rule-based. There is no `LLMProvider` interface, so students cannot plug in OpenAI, Ollama, Anthropic, etc.
 - **Fix (broken into smaller gaps below):**
 
-#### 6a. Add `cell/src/llm/types.ts` with `LLMProvider` interface and message/response types
+#### 5a. Add `cell/src/llm/types.ts` with `LLMProvider` interface and message/response types
+
+- **Status:** done
+- **Fixed by:** created `cell/src/llm/types.ts` with `LLMProvider`, `LLMMessage`, `LLMResponse`, and `LLMProviderConfig`. Updated `docs/ARCHITECTURE.md` to reference the new provider interface under the adapter/provider pattern.
+
+#### 5b. Add `cell/src/llm/ollama-provider.ts`
 
 - **Status:** todo
 
-#### 6b. Add `cell/src/llm/ollama-provider.ts`
+#### 5c. Add `cell/src/llm/openai-provider.ts` (OpenAI-compatible)
 
 - **Status:** todo
 
-#### 6c. Add `cell/src/llm/openai-provider.ts` (OpenAI-compatible)
+#### 5d. Add `cell/src/llm/factory.ts` to create a provider from env vars
 
 - **Status:** todo
 
-#### 6d. Add `cell/src/llm/factory.ts` to create a provider from env vars
+#### 5e. Wire `LLMProvider` into `Planner` with rule-based fallback
 
 - **Status:** todo
 
-#### 6e. Wire `LLMProvider` into `Planner` with rule-based fallback
+#### 5f. Make `Reasoner.reason()` async and wire `LLMProvider` with fallback
 
 - **Status:** todo
 
-#### 6f. Make `Reasoner.reason()` async and wire `LLMProvider` with fallback
+#### 5g. Make `LeadEngineer.decompose()` async and wire `LLMProvider` with fallback
 
 - **Status:** todo
 
-#### 6g. Make `LeadEngineer.decompose()` async and wire `LLMProvider` with fallback
+#### 5h. Pass LLM config through `Cell` and `server.ts`
 
 - **Status:** todo
 
-#### 6h. Pass LLM config through `Cell` and `server.ts`
+#### 5i. Add tests for LLM providers and LLM-backed paths
 
 - **Status:** todo
 
-#### 6i. Add tests for LLM providers and LLM-backed paths
-
-- **Status:** todo
-
-#### 6j. Document LLM configuration in `docs/ARCHITECTURE.md` or a new `docs/LLM.md`
+#### 5j. Document LLM configuration in `docs/ARCHITECTURE.md` or a new `docs/LLM.md`
 
 - **Status:** todo
 
