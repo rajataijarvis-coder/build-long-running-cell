@@ -11,7 +11,8 @@ import { MakerSubAgent, CheckerSubAgent } from './subagent.js';
 import { CellNetwork } from './network.js';
 import { MemoryStore } from './memory-store.js';
 import { RetrievalEngine } from './retrieval.js';
-import type { JournalEntry } from './types.js';
+import { Coordinator } from './coordinator.js';
+import type { JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -201,6 +202,32 @@ export function startServer(cell: Cell, port = 3456) {
         if (missionId) docs = docs.filter((d) => d.missionId === missionId);
         const results = query ? engine.retrieve(query, docs) : docs.map((d) => ({ document: d, score: 1 }));
         res.end(JSON.stringify({ ok: true, query, count: results.length, results }));
+        return;
+      }
+
+      if (url.pathname === '/coordinate-server' && req.method === 'POST') {
+        const body = await readBody();
+        const missions = (body.missions as Array<Record<string, unknown>> ?? []).map((m) => ({
+          id: String(m.id ?? `mission-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
+          title: String(m.title ?? ''),
+          description: String(m.description ?? ''),
+          status: 'backlog' as Mission['status'],
+          priority: Number(m.priority ?? 1),
+          createdAt: String(m.createdAt ?? new Date().toISOString()),
+          updatedAt: String(m.updatedAt ?? new Date().toISOString()),
+        }));
+        const coordinator = new Coordinator({
+          basePath: process.cwd(),
+          verificationCommands: [
+            ['npm', ['run', 'lint']],
+            ['npm', ['run', 'build']],
+            ['npm', ['test']],
+          ],
+          maxConcurrency: Number(body.maxConcurrency ?? 3),
+          maxRetries: Number(body.maxRetries ?? 3),
+        });
+        const result = await coordinator.coordinate(missions);
+        res.end(JSON.stringify({ ok: true, result }));
         return;
       }
 
