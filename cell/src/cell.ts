@@ -101,6 +101,12 @@ export class Cell {
     return (await this.memory.load()).currentState;
   }
 
+  /** Persist the current memory snapshot to disk. Called before shutdown. */
+  async flush(): Promise<void> {
+    const mem = await this.memory.load();
+    await this.memory.save(mem);
+  }
+
   async currentMission(): Promise<Mission | undefined> {
     const mem = await this.memory.load();
     if (!mem.currentMissionId) return undefined;

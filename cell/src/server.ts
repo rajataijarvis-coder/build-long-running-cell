@@ -20,6 +20,7 @@ import { Guardrails, hashAction } from './guardrails.js';
 import { BudgetTracker } from './budget.js';
 import { Observability } from './observability.js';
 import { HumanInTheLoop } from './hitl.js';
+import { CELL_VERSION } from './version.js';
 import type { HITLStatus, HumanReview, JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, observability?: Observability) {
@@ -79,6 +80,24 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
           res.end(JSON.stringify({ ok: true, metrics: snapshot }));
           return;
         }
+      }
+
+      if (url.pathname === '/health') {
+        const state = await cell.state();
+        res.end(JSON.stringify({
+          ok: true,
+          status: 'up',
+          state,
+          uptime: process.uptime(),
+          version: CELL_VERSION,
+          timestamp: new Date().toISOString(),
+        }));
+        return;
+      }
+
+      if (url.pathname === '/version') {
+        res.end(JSON.stringify({ ok: true, version: CELL_VERSION }));
+        return;
       }
 
       if (url.pathname === '/status') {

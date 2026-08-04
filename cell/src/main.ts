@@ -3,6 +3,8 @@ import { startServer } from './server.js';
 import { BudgetTracker } from './budget.js';
 import { Observability } from './observability.js';
 import { Scheduler, startSchedulerLoop } from './scheduler.js';
+import { onShutdown } from './shutdown.js';
+import { CELL_VERSION } from './version.js';
 
 const basePath = process.cwd();
 const verificationCommands: [string, string[]][] = [
@@ -29,13 +31,19 @@ const cell = new Cell({
   observability,
 });
 
-startServer(cell, 3456, budget, observability);
+const port = Number(process.env.PORT ?? '3456');
+const server = startServer(cell, port, budget, observability);
+console.log(`Cell version ${CELL_VERSION} starting on port ${port}`);
 
+let tickInterval: NodeJS.Timeout | undefined;
 const autoTick = process.env.AUTO_TICK === 'true';
 if (autoTick) {
-  setInterval(() => { cell.tick().catch((err) => console.error('Tick failed', err)); }, 5000);
+  tickInterval = setInterval(() => {
+    cell.tick().catch((err) => console.error('Tick failed', err));
+  }, 5000);
 }
 
+let schedulerStop: (() => void) | undefined;
 const autoSchedule = process.env.AUTO_SCHEDULE === 'true';
 if (autoSchedule) {
   const scheduler = new Scheduler({
@@ -46,12 +54,21 @@ if (autoSchedule) {
     budget,
     observability,
   });
-  startSchedulerLoop(scheduler, 60_000, (results) => {
+  schedulerStop = startSchedulerLoop(scheduler, 60_000, (results) => {
     if (results.length > 0) {
       console.log(`Scheduler tick produced ${results.length} result(s)`);
       for (const r of results) {
         console.log(`  ${r.taskId}: ran=${r.ran}${r.error ? ` error=${r.error}` : ''}`);
       }
     }
-  });
+  }).stop;
 }
+
+onShutdown(server, {
+  stopTimers: () => {
+    if (tickInterval) clearInterval(tickInterval);
+    schedulerStop?.();
+  },
+  onShutdown: () => cell.flush(),
+  timeoutMs: Number(process.env.SHUTDOWN_TIMEOUT_MS ?? '10000'),
+});

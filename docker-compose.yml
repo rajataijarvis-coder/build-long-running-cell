@@ -1,0 +1,50 @@
+# Docker Compose for local production-like deployment.
+#
+# Run with:
+#   docker compose up --build
+#
+# The cell runs continuously with AUTO_TICK and AUTO_SCHEDULE enabled. The
+# dashboard is built and served by Next.js, pointing at the cell container.
+
+services:
+  cell:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3456:3456"
+    environment:
+      - NODE_ENV=production
+      - PORT=3456
+      - AUTO_TICK=true
+      - AUTO_SCHEDULE=true
+      - CELL_TOKEN_LIMIT=0
+      - CELL_COST_LIMIT=0
+      - CELL_RUNTIME_LIMIT_MS=0
+    volumes:
+      # Persist state, memory, and journal across container restarts.
+      - cell-state:/app/state
+      - cell-memory:/app/memory
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3456/health').then(r=>r.ok?process.exit(0):process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  dashboard:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - CELL_URL=http://cell:3456
+      - NODE_ENV=production
+    depends_on:
+      cell:
+        condition: service_healthy
+
+volumes:
+  cell-state:
+  cell-memory:

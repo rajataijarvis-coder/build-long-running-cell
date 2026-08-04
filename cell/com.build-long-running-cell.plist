@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"? >
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.build-long-running-cell</string>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/rajatjarvis/Downloads/projects/build-long-running-cell/cell</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>dist/main.js</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>AUTO_TICK</key>
+    <string>true</string>
+    <key>AUTO_SCHEDULE</key>
+    <string>true</string>
+    <key>PORT</key>
+    <string>3456</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/rajatjarvis/Downloads/projects/build-long-running-cell/cell/logs/cell.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/rajatjarvis/Downloads/projects/build-long-running-cell/cell/logs/cell-error.log</string>
+</dict>
+</plist>
