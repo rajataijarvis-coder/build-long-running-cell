@@ -53,6 +53,16 @@ interface FailureRecord {
   resolved?: boolean;
 }
 
+interface MemorySummary {
+  id: string;
+  kind: string;
+  timestamp: string;
+  text: string;
+  sourceCount: number;
+  keywords: string[];
+  metadata: Record<string, unknown>;
+}
+
 interface LeadResult {
   ok: boolean;
   result?: {
@@ -80,6 +90,9 @@ export default function Home() {
   const [leadResult, setLeadResult] = useState<LeadResult | null>(null);
   const [failures, setFailures] = useState<FailureRecord[]>([]);
   const [failureKindFilter, setFailureKindFilter] = useState('');
+  const [summaries, setSummaries] = useState<MemorySummary[]>([]);
+  const [summaryKindFilter, setSummaryKindFilter] = useState('');
+  const [summaryGenerated, setSummaryGenerated] = useState(0);
 
   async function fetchStatus() {
     const res = await fetch('/api/cell/status');
@@ -182,6 +195,42 @@ export default function Home() {
       setLogs((l) => [...l, `Loaded ${data.failures.length} failure record(s)`]);
     } else {
       setLogs((l) => [...l, `Failure fetch failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function generateSummaries() {
+    setLogs((l) => [...l, 'Generating memory summaries...']);
+    const res = await fetch('/api/cell/summaries', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kinds: ['lead-runs', 'failures', 'mission-history', 'all'],
+        minSources: 1,
+        maxSources: 20,
+        maxSummaries: 50,
+        retention: 'lru',
+      }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      setSummaryGenerated(data.generated ?? 0);
+      setSummaries(data.summaries ?? []);
+      setLogs((l) => [...l, `Generated ${data.generated ?? 0} summary(s), kept ${data.kept ?? 0}`]);
+    } else {
+      setLogs((l) => [...l, `Summary generation failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function fetchSummaries() {
+    const params = new URLSearchParams();
+    if (summaryKindFilter) params.set('kind', summaryKindFilter);
+    const res = await fetch(`/api/cell/summaries?${params.toString()}`, { cache: 'no-store' });
+    const data = await res.json();
+    if (data.ok && data.summaries) {
+      setSummaries(data.summaries);
+      setLogs((l) => [...l, `Loaded ${data.summaries.length} summary(s)`]);
+    } else {
+      setLogs((l) => [...l, `Summary fetch failed: ${data.error ?? 'unknown'}`]);
     }
   }
 
@@ -338,6 +387,50 @@ export default function Home() {
                 </p>
                 <p className="text-slate-300 whitespace-pre-wrap">{f.message}</p>
                 <p className="text-slate-500 text-xs">{new Date(f.timestamp).toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-slate-700 p-4 mb-6">
+        <h2 className="text-xl font-semibold mb-2">Memory Growth & Summarisation</h2>
+        <p className="text-sm text-slate-400 mb-3">
+          Compress growing memory into compact summaries. The cell uses these to keep retrieval focused.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <input
+            value={summaryKindFilter}
+            onChange={(e) => setSummaryKindFilter(e.target.value)}
+            placeholder="Filter by kind (lead-runs, failures, all, ...)"
+            className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1"
+          />
+          <button
+            onClick={generateSummaries}
+            className="px-4 py-2 rounded bg-violet-600 hover:bg-violet-500 transition"
+          >
+            Generate
+          </button>
+          <button
+            onClick={fetchSummaries}
+            className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition"
+          >
+            Load
+          </button>
+        </div>
+        {summaryGenerated > 0 && (
+          <p className="text-xs text-slate-500 mb-2">Last generation produced {summaryGenerated} new summary(s).</p>
+        )}
+        {summaries.length > 0 && (
+          <div className="bg-slate-900 rounded p-3 text-sm space-y-2 max-h-60 overflow-auto">
+            {summaries.map((s) => (
+              <div key={s.id} className="border-b border-slate-800 last:border-0 pb-2 last:pb-0">
+                <p className="text-violet-400">
+                  {s.kind} ({s.sourceCount} sources)
+                </p>
+                <p className="text-slate-300 whitespace-pre-wrap">{s.text}</p>
+                <p className="text-slate-500 text-xs">keywords: {s.keywords.slice(0, 6).join(', ')}</p>
+                <p className="text-slate-500 text-xs">{new Date(s.timestamp).toLocaleString()}</p>
               </div>
             ))}
           </div>

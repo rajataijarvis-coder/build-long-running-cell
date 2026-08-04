@@ -14,6 +14,7 @@ import { RetrievalEngine } from './retrieval.js';
 import { Coordinator } from './coordinator.js';
 import { LeadEngineer } from './lead.js';
 import { GitMemory, FailureMemory } from './git-memory.js';
+import { MemorySummariser, SummaryMemory } from './summary.js';
 import type { JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -216,6 +217,37 @@ export function startServer(cell: Cell, port = 3456) {
           failures = failures.filter((f) => f.kind === kind);
         }
         res.end(JSON.stringify({ ok: true, failures }));
+        return;
+      }
+
+      if (url.pathname === '/summaries' && req.method === 'GET') {
+        const kind = url.searchParams.get('kind') ?? undefined;
+        const query = url.searchParams.get('query') ?? undefined;
+        const summaryMemory = new SummaryMemory(new GitMemory(process.cwd()));
+        let summaries = await summaryMemory.list();
+        if (kind) summaries = summaries.filter((s) => s.kind === kind);
+        if (query) summaries = await summaryMemory.search(query);
+        res.end(JSON.stringify({ ok: true, summaries }));
+        return;
+      }
+
+      if (url.pathname === '/summaries' && req.method === 'POST') {
+        const body = await readBody();
+        const gitMemory = new GitMemory(process.cwd());
+        const cell = await gitMemory.load();
+        const kinds = Array.isArray(body.kinds) ? (body.kinds as import('./types.js').SummaryKind[]) : undefined;
+        const summariser = new MemorySummariser({
+          minSources: Number(body.minSources ?? 3),
+          maxSources: Number(body.maxSources ?? 20),
+          store: new MemoryStore({ basePath: process.cwd() }),
+        });
+        const newSummaries = await summariser.summarise(cell, kinds);
+        const summaryMemory = new SummaryMemory(gitMemory, {
+          maxSummaries: Number(body.maxSummaries ?? 50),
+          retention: body.retention === 'lru' || body.retention === 'lfu' || body.retention === 'age' ? body.retention : 'lru',
+        });
+        const kept = await summaryMemory.append(newSummaries);
+        res.end(JSON.stringify({ ok: true, generated: newSummaries.length, kept: kept.length, summaries: kept.slice(-5) }));
         return;
       }
 

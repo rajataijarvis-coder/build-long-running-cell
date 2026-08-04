@@ -32,6 +32,7 @@ export class MemoryStore {
       ...this.proposalDocs(mem.proposals),
       ...this.progressDocs(mem.progressLog),
       ...this.journalDocs(journal),
+      ...this.summaryDocs(mem.summaries ?? []),
     ];
   }
 
@@ -91,6 +92,17 @@ export class MemoryStore {
       text: `state:${e.state} result:${e.result ?? 'unknown'} ${e.notes.join(' ')}`,
       timestamp: e.finishedAt ?? e.startedAt,
       metadata: { state: e.state, result: e.result },
+    }));
+  }
+
+  private summaryDocs(summaries: import('./types.js').MemorySummary[]): MemoryDocument[] {
+    return summaries.map((s) => ({
+      id: `summary:${s.id}`,
+      kind: 'progress',
+      missionId: undefined,
+      text: `${s.kind}\n${s.text}\nkeywords:${s.keywords.join(' ')}`,
+      timestamp: s.timestamp,
+      metadata: { kind: s.kind, sourceCount: s.sourceCount },
     }));
   }
 

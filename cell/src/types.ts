@@ -56,7 +56,30 @@ export interface CellMemory {
   leadRuns?: LeadRun[];
   /** Record of classified failures so the cell can learn from them. */
   failures?: FailureRecord[];
+  /** Curated summaries that compress long memory sequences into compact context. */
+  summaries?: MemorySummary[];
 }
+
+/** A synthetic memory document produced by summarising a group of raw records. */
+export interface MemorySummary {
+  id: string;
+  /** What this summary represents, e.g. 'lead-runs', 'failures', 'mission-history'. */
+  kind: SummaryKind;
+  /** ISO timestamp when the summary was generated. */
+  timestamp: string;
+  /** The human-readable summary text. */
+  text: string;
+  /** IDs of the raw records that contributed to this summary. */
+  sourceIds: string[];
+  /** How many raw records were compressed into this summary. */
+  sourceCount: number;
+  /** Query keywords derived from the summary so retrieval can still match it. */
+  keywords: string[];
+  /** Optional metadata, e.g. failure kind or mission status distribution. */
+  metadata: Record<string, unknown>;
+}
+
+export type SummaryKind = 'lead-runs' | 'failures' | 'mission-history' | 'journal' | 'all';
 
 export interface ReasoningContext {
   priorThought?: Thought;
