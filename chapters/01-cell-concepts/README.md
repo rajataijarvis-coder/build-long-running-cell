@@ -37,11 +37,11 @@ This is the first chapter, so there is no previous chapter to recap. Start from 
 
 ## Implementation
 
-### 1. Create `cell/src/types.ts`
+### 1. Open `cell/src/types.ts`
 
 The first code we write defines the vocabulary of the cell. These types will travel through almost every file we create, so it pays to keep them small, clear, and minimal.
 
-Open `cell/src/types.ts` and add:
+Open `cell/src/types.ts`. In the course repository it already contains the full set of types used by later chapters. For this chapter, focus on the foundational definitions near the top:
 
 ```ts
 export type CellState = 'idle' | 'planning' | 'executing' | 'verifying' | 'reviewing' | 'paused' | 'failed';
@@ -63,7 +63,11 @@ export interface Decision {
   choice: string;
   reason: string;
 }
+```
 
+And the core `CellMemory` interface. The repository version has additional fields added by later chapters, but the minimum shape is:
+
+```ts
 export interface CellMemory {
   currentState: CellState;
   currentMissionId?: string;
@@ -75,7 +79,7 @@ export interface CellMemory {
 
 `CellState` is the state machine. A cell is always in exactly one of these states. `Mission` is a unit of work: a title, a description, a status, and timestamps. `CellMemory` is the persisted world model: where the cell is, what it is working on, what it has already done, and what it has decided.
 
-Notice that `CellMemory` is intentionally flat. It is designed to be serialized to a single JSON file and reloaded later. Complex relational structures would make that harder without adding value at this stage.
+Notice that `CellMemory` is intentionally flat. It is designed to be serialized to a single JSON file and reloaded later. Complex relational structures would make that harder without adding value at this stage. Later chapters will add more fields to `CellMemory` (plans, proposals, budgets, and so on), but they all build on this minimal shape.
 
 ### 2. Add tests for the foundational types
 
@@ -103,18 +107,20 @@ describe('types', () => {
     assert.equal(mission.status, 'backlog');
   });
 
-  it('initialises CellMemory with default state', () => {
+  it('initialises CellMemory with default idle state', () => {
     const memory: CellMemory = {
       currentState: 'idle',
       missions: [],
       progressLog: [],
       decisions: [],
+      proposals: [],
     };
 
     assert.equal(memory.currentState, 'idle');
     assert.deepEqual(memory.missions, []);
     assert.deepEqual(memory.progressLog, []);
     assert.deepEqual(memory.decisions, []);
+    assert.deepEqual(memory.proposals, []);
     assert.equal(memory.currentMissionId, undefined);
   });
 });
@@ -122,14 +128,18 @@ describe('types', () => {
 
 We use `node:test` and `node:assert/strict` because Node.js ships with them. No extra test framework is needed for a course that values simplicity and determinism.
 
-Run the tests now, even though the project is not fully scaffolded. In the next chapter we will wire `npm run verify`; for now, run the test file directly with `tsx` or a compiled copy.
+Run the tests once the project is scaffolded in the next chapter. From inside `cell/`:
 
 ```bash
 cd cell
-npx tsx src/types.test.ts
+npm run verify
 ```
 
-If you do not have `tsx` installed, you can run the compiled JavaScript after `tsc` in the next chapter.
+In the first chapter you can also run the test file directly with `tsx` if you have it installed:
+
+```bash
+npx tsx src/types.test.ts
+```
 
 ## Verification
 
