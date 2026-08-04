@@ -76,7 +76,7 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 
 **Problem:** Several chapter READMEs walk the reader through creating files that are already present in the repo (e.g., Chapter 22 tells you to create `cell/src/hitl.ts`, Chapter 21 tells you to create `frontend/src/components/StatusPanel.tsx`). This is confusing for junior developers who try to follow step-by-step.
 
-**Status:** Partially fixed in commit `ac74b0e`. Added the "files already exist in repo" note to chapters 21 and 22. Remaining chapters still need the same note (04–20, 23).
+**Status:** Fixed in commits `ac74b0e` (chapters 21 and 22) and `7b7e58b` (chapters 04–20). Chapter 23 already contained the note. All affected chapters now include a "files already exist in repo" note at the top.
 
 **Files:** `chapters/*/README.md`
 
