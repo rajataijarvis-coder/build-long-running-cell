@@ -54,14 +54,9 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 
 **Problem:** `docs/FACTORY_MODES.md` explains dark mode, but enabling it requires manually creating permissive `HumanInTheLoop` and `Guardrails` instances. There is no environment flag or CLI entry point (e.g., `npm run dev:dark` or `DARK_FACTORY=true`) to run the cell in dark mode safely.
 
-**Fix:**
-- [ ] Add a helper function `createDarkFactoryContext(basePath)` in `cell/src/factory.ts`.
-- [ ] Add `cell/src/main-dark.ts` entry point that starts the cell in dark mode.
-- [ ] Add an npm script: `"dev:dark": "npm run build && DARK_FACTORY=true node dist/main.js"`.
-- [ ] Ensure dark mode still enforces verification, budgets, and Git memory.
-- [ ] Document the exact commands in `docs/FACTORY_MODES.md` and add a note in `README.md`.
+**Status:** Fixed in commits `6e3b310` (code) and `02ad217` (docs). Added `cell/src/factory.ts` with `createLitFactoryContext` and `createDarkFactoryContext`, `cell/src/main-dark.ts`, and `dev:dark` / `start:dark` npm scripts. Updated `docs/FACTORY_MODES.md` with the exact commands and helper API.
 
-**Files:** `cell/src/main.ts` (or new `cell/src/main-dark.ts`), `cell/src/factory.ts` (new), `docs/FACTORY_MODES.md`, `cell/package.json`
+**Files:** `cell/src/main.ts`, `cell/src/main-dark.ts`, `cell/src/factory.ts`, `cell/package.json`, `docs/FACTORY_MODES.md`
 
 ---
 
