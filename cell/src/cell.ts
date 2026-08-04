@@ -121,7 +121,41 @@ export class Cell {
           break;
         case 'executing':
           await this.runPhase(mission, 'executing', async () => {
-            const loopResult = await this.loopEngine.run(mission.id, mission.description);
+            const checkpoint = mem.reasoningContext
+              ? {
+                  priorThought: mem.reasoningContext.priorThought,
+                  priorObservation: mem.reasoningContext.priorObservation,
+                  attempt: mem.reasoningContext.attempt,
+                  accumulatedTask: mem.reasoningContext.accumulatedTask,
+                }
+              : undefined;
+
+            // Persist the inner reasoning loop's checkpoint after every
+            // non-finish iteration. If the cell process crashes mid-thought,
+            // the next restart resumes from the exact thought and observation
+            // that were in progress, not from the beginning of the executing
+            // phase. This is durable self-correction.
+            const onCheckpoint = async (ctx: {
+              priorThought?: import('./types.js').Thought;
+              priorObservation?: import('./types.js').Observation;
+              attempt: number;
+              accumulatedTask: string;
+            }): Promise<void> => {
+              mem.reasoningContext = {
+                priorThought: ctx.priorThought,
+                priorObservation: ctx.priorObservation,
+                attempt: ctx.attempt,
+                accumulatedTask: ctx.accumulatedTask,
+              };
+              await this.memory.save(mem);
+            };
+
+            const loopResult = await this.loopEngine.run(
+              mission.id,
+              mission.description,
+              checkpoint,
+              onCheckpoint
+            );
             await this.memory.logProgress(
               `Executed mission ${mission.id}: ${loopResult.iterations.length} reasoning loop iterations, success=${loopResult.success}`
             );
@@ -132,6 +166,7 @@ export class Cell {
             }
           });
           mem.currentPlan = undefined;
+          mem.reasoningContext = undefined;
           mem.currentState = 'verifying';
           break;
         case 'verifying':

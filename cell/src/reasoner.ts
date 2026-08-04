@@ -79,6 +79,23 @@ export class Reasoner {
       }
     }
 
+    // If the previous observation succeeded, move forward from the completed
+    // step rather than using the raw step number. This prevents the cell from
+    // re-running a completed verification step or re-reading a file it already
+    // read, even when the prior step was retried multiple times.
+    if (priorObservation && priorObservation.success) {
+      const completedIndex = plan.steps.findIndex((s) => s.id === priorObservation.stepId);
+      const nextIndex = completedIndex + 1;
+      const next = plan.steps[nextIndex];
+      if (next) return next;
+      return {
+        id: `review-${stepNumber}`,
+        description: 'Review progress and decide next move',
+        tool: 'shell',
+        input: 'echo Reviewing progress',
+      };
+    }
+
     // Otherwise move to the next step in the plan, falling back to a review
     // step if we have moved past the end.
     return plan.steps[stepNumber - 1] ?? {

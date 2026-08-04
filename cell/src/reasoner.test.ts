@@ -53,4 +53,18 @@ describe('Reasoner', () => {
     assert.equal(retry.stepId, 's1');
     assert.match(retry.action.input, /retry after/);
   });
+
+  it('skips a step that has already succeeded', () => {
+    const reasoner = new Reasoner();
+    const plan = makePlan('verify');
+    const first = reasoner.reason(plan, undefined, undefined, 'verify');
+    const okObservation: Observation = {
+      stepId: first.stepId,
+      output: 'all green',
+      success: true,
+    };
+    // Re-passing the same completed observation should not return s1 again.
+    const retry = reasoner.reason(plan, first, okObservation, 'verify');
+    assert.notEqual(retry.stepId, 's1');
+  });
 });

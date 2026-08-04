@@ -50,4 +50,21 @@ describe('Reflector', () => {
     assert.equal(reflection.verdict, 'escalate');
     assert.match(reflection.note, /tool crashed/);
   });
+
+  it('uses failure-kind overrides before budget checks', () => {
+    const reflector = new Reflector({
+      maxAttempts: 5,
+      failureKinds: [
+        { substring: 'ENOENT', verdict: 'escalate', reason: 'Missing file is not recoverable by retry' },
+        { substring: 'timeout', verdict: 'continue', reason: 'Transient timeout should retry' },
+      ],
+    });
+    const missingFile = reflector.reflect({ stepId: 's1', output: 'Error: ENOENT: no such file', success: false }, summary(false), 1);
+    assert.equal(missingFile.verdict, 'escalate');
+    assert.match(missingFile.note, /Missing file/);
+
+    const timeout = reflector.reflect({ stepId: 's1', output: 'Connection timeout after 30s', success: false }, summary(false), 1);
+    assert.equal(timeout.verdict, 'continue');
+    assert.match(timeout.note, /Transient timeout/);
+  });
 });

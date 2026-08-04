@@ -17,6 +17,15 @@ export interface CellMemory {
   progressLog: string[];
   decisions: Decision[];
   currentPlan?: Plan;
+  /** Context from the inner reasoning loop so a restart can resume mid-thought. */
+  reasoningContext?: ReasoningContext;
+}
+
+export interface ReasoningContext {
+  priorThought?: Thought;
+  priorObservation?: Observation;
+  attempt: number;
+  accumulatedTask: string;
 }
 
 export interface Decision {
@@ -93,6 +102,17 @@ export interface ReasonerOptions {
 
 export interface ReflectorOptions {
   maxAttempts?: number;
+  /**
+   * Maps substrings to verdict overrides. If the observation output or note
+   * contains a listed substring, the reflector returns that verdict immediately.
+   * This lets the cell treat different failure modes differently instead of
+   * retrying blindly. Later entries take precedence.
+   */
+  failureKinds?: Array<{
+    substring: string;
+    verdict: ReflectionVerdict;
+    reason: string;
+  }>;
 }
 
 export interface Tool {

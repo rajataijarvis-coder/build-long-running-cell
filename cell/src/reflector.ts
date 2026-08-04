@@ -23,6 +23,22 @@ export class Reflector {
   ): Reflection {
     const maxAttempts = this.options.maxAttempts ?? 3;
     const stepId = observation.stepId;
+    const text = `${observation.output} ${observation.note ?? ''}`;
+
+    // A failure-kind override lets the cell treat different failure modes
+    // differently. For example, a missing file (ENOENT) is unlikely to be
+    // fixed by retrying the same command, while a timeout may be transient.
+    const kinds = this.options.failureKinds ?? [];
+    for (const kind of kinds) {
+      if (text.toLowerCase().includes(kind.substring.toLowerCase())) {
+        return {
+          stepId,
+          verdict: kind.verdict,
+          note: `${kind.reason} (matched "${kind.substring}")`,
+          shouldRetry: kind.verdict === 'continue',
+        };
+      }
+    }
 
     if (verification.passed) {
       return {

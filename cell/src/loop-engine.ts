@@ -59,14 +59,53 @@ export class LoopEngine {
     this.reflector = reflector ?? new Reflector({ maxAttempts: maxIterations });
   }
 
-  async run(missionId: string, task: string): Promise<LoopResult> {
+  /**
+   * Run the reasoning loop. If a checkpoint is supplied the loop resumes
+   * from the saved prior thought and observation so a cell restart does not
+   * lose its place mid-mission. The checkpoint also carries the accumulated
+   * task context so retries continue with the same growing prompt.
+   *
+   * The optional `onCheckpoint` callback is invoked after every non-finish
+   * iteration with the latest reasoning context. This lets the durable outer
+   * cell save the inner loop's state after each attempt, so a crash during a
+   * long retry sequence resumes from the exact thought that was in progress
+   * rather than restarting the entire executing phase.
+   */
+  async run(
+    missionId: string,
+    task: string,
+    checkpoint?: {
+      priorThought?: Thought;
+      priorObservation?: Observation;
+      attempt: number;
+      accumulatedTask?: string;
+    },
+    onCheckpoint?: (checkpoint: {
+      priorThought?: Thought;
+      priorObservation?: Observation;
+      attempt: number;
+      accumulatedTask: string;
+    }) => Promise<void> | void
+  ): Promise<
+    LoopResult & {
+      checkpoint?: {
+        priorThought?: Thought;
+        priorObservation?: Observation;
+        attempt: number;
+        accumulatedTask: string;
+      };
+    }
+  > {
     const iterations: LoopIteration[] = [];
-    let priorThought: Thought | undefined;
-    let priorObservation: Observation | undefined;
+    let priorThought: Thought | undefined = checkpoint?.priorThought;
+    let priorObservation: Observation | undefined = checkpoint?.priorObservation;
+    let attempt = checkpoint?.attempt ?? 0;
+    let accumulatedTask = checkpoint?.accumulatedTask ?? task;
 
-    for (let step = 1; step <= this.maxIterations; step++) {
-      const plan = await this.planner.plan(missionId, task);
-      const thought = this.reasoner.reason(plan, priorThought, priorObservation, task);
+    for (let step = attempt + 1; step <= this.maxIterations; step++) {
+      attempt = step;
+      const plan = await this.planner.plan(missionId, accumulatedTask);
+      const thought = this.reasoner.reason(plan, priorThought, priorObservation, accumulatedTask);
       const action = thought.action;
       const rawOutput = await this.actor.act(action);
       const observation = this.observer.observe(action, rawOutput);
@@ -85,13 +124,32 @@ export class LoopEngine {
         };
       }
 
+      // Persist the inner-loop checkpoint after every non-finish iteration.
+      // The callback lets the outer cell save reasoningContext to durable
+      // memory so a restart can resume mid-mission.
+      const currentCheckpoint = {
+        priorThought: thought,
+        priorObservation: observation,
+        attempt: step,
+        accumulatedTask,
+      };
+      if (onCheckpoint) {
+        await onCheckpoint(currentCheckpoint);
+      }
+
       if (reflection.verdict === 'escalate') {
-        break;
+        return {
+          missionId,
+          iterations,
+          finalAnswer: observation.output,
+          success: false,
+          checkpoint: currentCheckpoint,
+        };
       }
 
       // Build richer context for the next attempt.
       const failed = verification.results.find((r) => !r.passed);
-      task += `\nAttempt ${step} failed: ${failed?.stderr ?? 'verification failed'}. Observation: ${observation.note ?? observation.output}. Reflection: ${reflection.note}`;
+      accumulatedTask += `\nAttempt ${step} failed: ${failed?.stderr ?? 'verification failed'}. Observation: ${observation.note ?? observation.output}. Reflection: ${reflection.note}`;
       priorThought = thought;
       priorObservation = observation;
     }
@@ -101,6 +159,7 @@ export class LoopEngine {
       iterations,
       finalAnswer: iterations.at(-1)?.observation.output ?? '',
       success: false,
+      checkpoint: { priorThought, priorObservation, attempt, accumulatedTask },
     };
   }
 }
