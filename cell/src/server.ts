@@ -33,21 +33,35 @@ export interface ServerContext {
   guardrails: Guardrails;
   hitl: HumanInTheLoop;
   memoryStore: MemoryStore;
-  retrieval: RetrievalEngine;
 }
 
-export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, observability?: Observability) {
-  const basePath = cell.basePath;
-  const sharedBudget = budget ?? new BudgetTracker({ basePath });
-  const sharedObservability = observability ?? new Observability({ basePath });
-  const guardrails = new Guardrails({
-    workspacePath: basePath,
-    defaultAllowList: ['npm', 'node', 'echo', 'ls'],
-    requireApprovalForDestructive: true,
-    approvedDestructive: new Set<string>(),
-  });
-  const hitl = new HumanInTheLoop({ basePath });
-  const memoryStore = new MemoryStore({ basePath });
+export function startServer(cell: Cell, port?: number, budget?: BudgetTracker, observability?: Observability): ReturnType<typeof createServer>;
+export function startServer(context: ServerContext, port?: number): ReturnType<typeof createServer>;
+export function startServer(
+  cellOrContext: Cell | ServerContext,
+  port = 3456,
+  budget?: BudgetTracker,
+  observability?: Observability,
+): ReturnType<typeof createServer> {
+  const context: ServerContext =
+    cellOrContext instanceof Cell
+      ? {
+          cell: cellOrContext,
+          basePath: cellOrContext.basePath,
+          budget: budget ?? new BudgetTracker({ basePath: cellOrContext.basePath }),
+          observability: observability ?? new Observability({ basePath: cellOrContext.basePath }),
+          guardrails: new Guardrails({
+            workspacePath: cellOrContext.basePath,
+            defaultAllowList: ['npm', 'node', 'echo', 'ls'],
+            requireApprovalForDestructive: true,
+            approvedDestructive: new Set<string>(),
+          }),
+          hitl: new HumanInTheLoop({ basePath: cellOrContext.basePath }),
+          memoryStore: new MemoryStore({ basePath: cellOrContext.basePath }),
+        }
+      : cellOrContext;
+
+  const { cell, basePath, budget: sharedBudget, observability: sharedObservability, guardrails, hitl, memoryStore } = context;
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);

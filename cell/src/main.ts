@@ -1,10 +1,14 @@
 import { Cell } from './cell.js';
-import { startServer } from './server.js';
+import { startServer, type ServerContext } from './server.js';
 import { BudgetTracker } from './budget.js';
 import { Observability } from './observability.js';
 import { Scheduler, startSchedulerLoop } from './scheduler.js';
 import { onShutdown } from './shutdown.js';
 import { CELL_VERSION } from './version.js';
+import { Guardrails } from './guardrails.js';
+import { HumanInTheLoop } from './hitl.js';
+import { MemoryStore } from './memory-store.js';
+import { RetrievalEngine } from './retrieval.js';
 
 const basePath = process.cwd();
 const verificationCommands: [string, string[]][] = [
@@ -22,6 +26,15 @@ const budget = new BudgetTracker({
 });
 
 const observability = new Observability({ basePath });
+const guardrails = new Guardrails({
+  workspacePath: basePath,
+  defaultAllowList: ['npm', 'node', 'echo', 'ls'],
+  requireApprovalForDestructive: true,
+  approvedDestructive: new Set<string>(),
+});
+const hitl = new HumanInTheLoop({ basePath });
+const memoryStore = new MemoryStore({ basePath });
+const retrieval = new RetrievalEngine({ topK: 5 });
 
 const cell = new Cell({
   basePath,
@@ -29,10 +42,23 @@ const cell = new Cell({
   maxRetries: 3,
   budget,
   observability,
+  guardrailsInstance: guardrails,
+  hitl,
+  memoryStore,
+  retrieval,
 });
 
 const port = Number(process.env.PORT ?? '3456');
-const server = startServer(cell, port, budget, observability);
+const context: ServerContext = {
+  cell,
+  basePath,
+  budget,
+  observability,
+  guardrails,
+  hitl,
+  memoryStore,
+};
+const server = startServer(context, port);
 console.log(`Cell version ${CELL_VERSION} starting on port ${port}`);
 
 let tickInterval: NodeJS.Timeout | undefined;

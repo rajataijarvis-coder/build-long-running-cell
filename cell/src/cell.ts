@@ -30,6 +30,8 @@ export interface CellConfig {
   memoryStore?: MemoryStore;
   /** Optional guardrail configuration. If omitted, guardrails are still enabled with sensible defaults. */
   guardrails?: ConstructorParameters<typeof Guardrails>[0];
+  /** Optional shared guardrails instance. When provided, the same instance is used by the HTTP server so policies stay in sync. */
+  guardrailsInstance?: Guardrails;
   /** Optional budget tracker. If omitted, budgets are tracked with unlimited defaults. */
   budget?: BudgetTracker;
   /** Optional observability collector. If omitted, metrics are tracked in memory only. */
@@ -69,7 +71,7 @@ export class Cell {
     this.observability = config.observability ?? new Observability({ basePath: config.basePath });
     this.hitl = config.hitl ?? new HumanInTheLoop({ basePath: config.basePath });
 
-    const guardrails = new Guardrails(config.guardrails ?? {
+    const guardrails = config.guardrailsInstance ?? new Guardrails(config.guardrails ?? {
       workspacePath: config.basePath,
       defaultAllowList: config.shellAllowList,
       requireApprovalForDestructive: true,
