@@ -17,11 +17,11 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 
 **Problem:** Before commit `1451137` the HTTP server constructed its own `Guardrails` and `HumanInTheLoop` instances using `cell.basePath`. The cell also constructed its own. That meant an operator could approve a destructive action through the HTTP API, but the cell loop would still see it as unapproved, and vice versa.
 
-**Status:** Fixed in `1451137`. `main.ts` now builds one set of shared services (`guardrails`, `hitl`, `memoryStore`) and passes them to both `Cell` (via `guardrailsInstance`, `hitl`, `memoryStore`) and `startServer` (via `ServerContext`).
+**Status:** Fixed in `1451137` and `789dfa1`. `main.ts` now builds one set of shared services (`guardrails`, `hitl`, `memoryStore`) and passes them to both `Cell` (via `guardrailsInstance`, `hitl`, `memoryStore`) and `startServer` (via `ServerContext`).
 
 **Still needed:**
-- [ ] Verify `ServerContext` is documented in `docs/ARCHITECTURE.md` and `docs/CODEBASE_GUIDE.md`.
-- [ ] Update `docs/CHAPTER_CROSS_REFERENCE.md` to mention `ServerContext` / shared services.
+- [x] Verify `ServerContext` is documented in `docs/ARCHITECTURE.md` and `docs/CODEBASE_GUIDE.md`.
+- [x] Update `docs/CHAPTER_CROSS_REFERENCE.md` to mention `ServerContext` / shared services.
 - [ ] Add an integration test that proves the HTTP API and the cell see the same `HumanReview` records.
 
 **Files:** `cell/src/main.ts`, `cell/src/server.ts`, `cell/src/cell.ts`
@@ -32,7 +32,7 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 
 **Problem:** In `cell/src/server.ts` the `/verify` endpoint hardcodes `['npm run lint', 'npm run build', 'npm test']` instead of using the `verificationCommands` that were passed to `Cell`. If a student configures different commands (e.g., adding `typecheck`), the HTTP endpoint lies about what is being verified.
 
-**Fix:** Pass the cell's `verificationCommands` into `ServerContext` and use them in `/verify`.
+**Status:** Fixed in commit `789dfa1`. `ServerContext` now carries `verificationCommands`, and the `/verify` endpoint uses them with a sensible fallback.
 
 **Files:** `cell/src/server.ts`, `cell/src/main.ts`
 
