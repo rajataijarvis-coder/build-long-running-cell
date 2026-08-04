@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import type { Mission, CellMemory } from './types.js';
+import type { Mission, CellMemory, CellState } from './types.js';
 
 describe('types', () => {
   it('creates a Mission with required fields', () => {
@@ -19,18 +19,20 @@ describe('types', () => {
     assert.equal(mission.status, 'backlog');
   });
 
-  it('initialises CellMemory with default state', () => {
+  it('initialises CellMemory with default idle state', () => {
     const memory: CellMemory = {
-      currentState: 'idle',
+      currentState: 'idle' as CellState,
       missions: [],
       progressLog: [],
       decisions: [],
+      proposals: [],
     };
 
     assert.equal(memory.currentState, 'idle');
     assert.deepEqual(memory.missions, []);
     assert.deepEqual(memory.progressLog, []);
     assert.deepEqual(memory.decisions, []);
+    assert.deepEqual(memory.proposals, []);
     assert.equal(memory.currentMissionId, undefined);
   });
 });
