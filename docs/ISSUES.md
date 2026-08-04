@@ -22,7 +22,9 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 **Still needed:**
 - [x] Verify `ServerContext` is documented in `docs/ARCHITECTURE.md` and `docs/CODEBASE_GUIDE.md`.
 - [x] Update `docs/CHAPTER_CROSS_REFERENCE.md` to mention `ServerContext` / shared services.
-- [ ] Add an integration test that proves the HTTP API and the cell see the same `HumanReview` records.
+- [x] Add an integration test that proves the HTTP API and the cell see the same `HumanReview` records. (commit `92f6713`)
+
+**Status:** Resolved.
 
 **Files:** `cell/src/main.ts`, `cell/src/server.ts`, `cell/src/cell.ts`
 
