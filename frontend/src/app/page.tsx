@@ -87,6 +87,19 @@ interface GuardrailCheck {
   note: string;
 }
 
+interface HumanReview {
+  id: string;
+  missionId: string;
+  stepId: string;
+  status: 'pending' | 'approved' | 'revised' | 'rejected';
+  action: { tool: string; input: string };
+  reason: string;
+  requestedAt: string;
+  resolvedAt?: string;
+  feedback?: string;
+  ruleId?: string;
+}
+
 export default function Home() {
   const [status, setStatus] = useState<Status | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -109,6 +122,9 @@ export default function Home() {
   const [guardInput, setGuardInput] = useState('');
   const [guardTool, setGuardTool] = useState('shell');
   const [guardResult, setGuardResult] = useState<GuardrailCheck | null>(null);
+  const [reviews, setReviews] = useState<HumanReview[]>([]);
+  const [reviewFilter, setReviewFilter] = useState('pending');
+  const [reviewFeedback, setReviewFeedback] = useState<Record<string, string>>({});
 
   async function checkGuardrails() {
     setLogs((l) => [...l, `Checking guardrails for ${guardTool}: ${guardInput}`]);
@@ -140,9 +156,47 @@ export default function Home() {
     await fetchStatus();
   }
 
+  async function fetchReviews(status?: string) {
+    const params = status ? `?status=${status}` : '';
+    const res = await fetch(`/api/cell/reviews${params}`, { cache: 'no-store' });
+    const data = await res.json();
+    if (data.ok && data.reviews) {
+      setReviews(data.reviews);
+      const pendingCount = data.reviews.filter((r: HumanReview) => r.status === 'pending').length;
+      setLogs((l) => [...l, `Loaded ${data.reviews.length} review(s), ${pendingCount} pending`]);
+    } else {
+      setLogs((l) => [...l, `Review fetch failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function resolveReview(reviewId: string, verdict: HumanReview['status']) {
+    setLogs((l) => [...l, `Resolving review ${reviewId} as ${verdict}...`]);
+    const res = await fetch('/api/cell/reviews', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reviewId,
+        verdict,
+        feedback: reviewFeedback[reviewId] ?? '',
+      }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      setLogs((l) => [...l, `Review ${reviewId} resolved as ${verdict}`]);
+      await fetchReviews(reviewFilter);
+      await fetchStatus();
+    } else {
+      setLogs((l) => [...l, `Review resolution failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
   useEffect(() => {
     fetchStatus();
-    const id = setInterval(fetchStatus, 3000);
+    fetchReviews('pending');
+    const id = setInterval(() => {
+      fetchStatus();
+      fetchReviews('pending');
+    }, 3000);
     return () => clearInterval(id);
   }, []);
 
@@ -650,6 +704,98 @@ export default function Home() {
               </div>
             ))}
           </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-slate-700 p-4 mb-6">
+        <h2 className="text-xl font-semibold mb-2">Human-in-the-Loop Reviews</h2>
+        <p className="text-sm text-slate-400 mb-3">
+          Approve, revise, or reject high-impact actions before the cell executes them.
+        </p>
+
+        <div className="flex gap-2 mb-3">
+          <select
+            value={reviewFilter}
+            onChange={(e) => {
+              setReviewFilter(e.target.value);
+              fetchReviews(e.target.value);
+            }}
+            className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
+          >
+            <option value="">all</option>
+            <option value="pending">pending</option>
+            <option value="approved">approved</option>
+            <option value="revised">revised</option>
+            <option value="rejected">rejected</option>
+          </select>
+          <button onClick={() => fetchReviews(reviewFilter)} className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition">
+            Load Reviews
+          </button>
+        </div>
+
+        {reviews.length > 0 ? (
+          <div className="bg-slate-900 rounded p-3 text-sm space-y-3 max-h-72 overflow-auto">
+            {reviews.map((r) => (
+              <div key={r.id} className="border-b border-slate-800 last:border-0 pb-3 last:pb-0">
+                <div className="flex justify-between items-start">
+                  <p className="text-amber-400 font-mono">{r.id}</p>
+                  <span className={`text-xs px-2 py-0.5 rounded ${
+                    r.status === 'pending'
+                      ? 'bg-yellow-900/30 text-yellow-300'
+                      : r.status === 'approved'
+                      ? 'bg-emerald-900/30 text-emerald-300'
+                      : 'bg-rose-900/30 text-rose-300'
+                  }`}>
+                    {r.status}
+                  </span>
+                </div>
+                <p className="text-slate-300 mt-1">{r.reason}</p>
+                <p className="text-slate-500 text-xs">tool: {r.action.tool}</p>
+                <p className="text-slate-500 text-xs whitespace-pre-wrap">{r.action.input}</p>
+                <p className="text-slate-500 text-xs mt-1">
+                  requested {new Date(r.requestedAt).toLocaleString()}
+                  {r.resolvedAt && ` · resolved ${new Date(r.resolvedAt).toLocaleString()}`}
+                </p>
+
+                {r.status === 'pending' && (
+                  <div className="mt-2 space-y-2">
+                    <input
+                      value={reviewFeedback[r.id] ?? ''}
+                      onChange={(e) => setReviewFeedback((f) => ({ ...f, [r.id]: e.target.value }))}
+                      placeholder="Feedback (required for revise)"
+                      className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => resolveReview(r.id, 'approved')}
+                        className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-xs"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => resolveReview(r.id, 'revised')}
+                        className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-xs"
+                      >
+                        Revise
+                      </button>
+                      <button
+                        onClick={() => resolveReview(r.id, 'rejected')}
+                        className="px-3 py-1 rounded bg-rose-600 hover:bg-rose-500 text-xs"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {r.feedback && (
+                  <p className="text-slate-400 text-xs mt-1">feedback: {r.feedback}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-slate-500 text-sm">No reviews match the selected filter.</p>
         )}
       </section>
 

@@ -172,6 +172,7 @@ export interface WorkItem {
   status: 'pending' | 'running' | 'done' | 'failed';
 }
 
+/** Verdict attached to a maker/checker review. */
 export type ReviewVerdict = 'approve' | 'revise' | 'reject';
 
 export interface Review {
@@ -257,6 +258,26 @@ export interface Reflection {
   shouldRetry: boolean;
 }
 
+/** Verdict for a human-in-the-loop review. */
+export type HITLVerdict = 'approve' | 'revise' | 'reject';
+export type HITLStatus = 'pending' | 'approved' | 'revised' | 'rejected';
+
+export interface HumanReview {
+  id: string;
+  missionId: string;
+  stepId: string;
+  status: HITLStatus;
+  action: {
+    tool: string;
+    input: string;
+  };
+  reason: string;
+  requestedAt: string;
+  resolvedAt?: string;
+  feedback?: string;
+  ruleId?: string;
+}
+
 export interface ReasoningContext {
   priorThought?: Thought;
   priorObservation?: Observation;
@@ -283,6 +304,10 @@ export interface CellMemory {
   budget?: Budget;
   /** Observable health and performance counters. */
   metrics?: MetricSnapshot;
+  /** Pending and resolved human reviews. */
+  reviews?: HumanReview[];
+  /** If the cell is waiting on a review, this is the id of the pending review. */
+  pendingReviewId?: string;
 }
 
 export interface Budget {

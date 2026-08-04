@@ -19,7 +19,8 @@ import { Scheduler } from './scheduler.js';
 import { Guardrails, hashAction } from './guardrails.js';
 import { BudgetTracker } from './budget.js';
 import { Observability } from './observability.js';
-import type { JournalEntry, Mission } from './types.js';
+import { HumanInTheLoop } from './hitl.js';
+import type { HITLStatus, HumanReview, JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, observability?: Observability) {
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -182,6 +183,41 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
         guardrails.approve(action);
         const result = guardrails.check(action);
         res.end(JSON.stringify({ approved: hashAction(action), ...result }));
+        return;
+      }
+
+      if (url.pathname === '/reviews') {
+        const hitl = new HumanInTheLoop({ basePath: process.cwd() });
+        const status = url.searchParams.get('status') as HumanReview['status'] | null;
+        let reviews = await hitl.list();
+        if (status) {
+          reviews = reviews.filter((r) => r.status === status);
+        }
+        res.end(JSON.stringify({ ok: true, reviews }));
+        return;
+      }
+
+      if (url.pathname === '/reviews/pending') {
+        const hitl = new HumanInTheLoop({ basePath: process.cwd() });
+        const reviews = await hitl.pending();
+        res.end(JSON.stringify({ ok: true, reviews }));
+        return;
+      }
+
+      if (url.pathname === '/reviews/resolve' && req.method === 'POST') {
+        const body = await readBody();
+        const hitl = new HumanInTheLoop({ basePath: process.cwd() });
+        const review = await hitl.resolve(
+          String(body.reviewId ?? ''),
+          body.verdict as HITLStatus,
+          body.feedback !== undefined ? String(body.feedback) : undefined
+        );
+        if (!review) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ ok: false, error: 'review not found or already resolved' }));
+          return;
+        }
+        res.end(JSON.stringify({ ok: true, review }));
         return;
       }
 

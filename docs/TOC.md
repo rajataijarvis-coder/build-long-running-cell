@@ -61,6 +61,6 @@
 | 19 | published |
 | 20 | published |
 | 21 | published |
-| 22 | planned |
+| 22 | published |
 | 23 | planned |
 | 24 | planned |

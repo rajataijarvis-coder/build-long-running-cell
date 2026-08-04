@@ -11,6 +11,7 @@ import { MemoryStore } from './memory-store.js';
 import { RetrievalEngine } from './retrieval.js';
 import { BudgetTracker } from './budget.js';
 import { Observability } from './observability.js';
+import { HumanInTheLoop } from './hitl.js';
 import type { CellState, JournalEntry, Mission, Tool, ToolRegistry, ReasonerOptions, ReflectorOptions, Budget, MetricSnapshot } from './types.js';
 
 export interface CellConfig {
@@ -31,6 +32,8 @@ export interface CellConfig {
   budget?: BudgetTracker;
   /** Optional observability collector. If omitted, metrics are tracked in memory only. */
   observability?: Observability;
+  /** Optional human-in-the-loop gate. If omitted, no actions require human approval. */
+  hitl?: HumanInTheLoop;
 }
 
 export class Cell {
@@ -45,6 +48,7 @@ export class Cell {
   private retrieval: RetrievalEngine;
   private budget: BudgetTracker;
   private observability: Observability;
+  private hitl: HumanInTheLoop;
 
   constructor(config: CellConfig) {
     this.config = config;
@@ -55,6 +59,7 @@ export class Cell {
     this.retrieval = config.retrieval ?? new RetrievalEngine({ topK: 5 });
     this.budget = config.budget ?? new BudgetTracker({ basePath: config.basePath });
     this.observability = config.observability ?? new Observability({ basePath: config.basePath });
+    this.hitl = config.hitl ?? new HumanInTheLoop({ basePath: config.basePath });
 
     const guardrails = new Guardrails(config.guardrails ?? {
       workspacePath: config.basePath,
@@ -127,6 +132,37 @@ export class Cell {
     const tickStart = Date.now();
     const mem = await this.memory.load();
 
+    // Resume or fail a mission that is waiting on a human review. This check
+    // runs before state-machine dispatching so a restart after a crash does
+    // not lose the pending question.
+    if (mem.pendingReviewId) {
+      const mission = mem.currentMissionId ? mem.missions.find((m) => m.id === mem.currentMissionId) : undefined;
+      const review = (await this.hitl.list()).find((r) => r.id === mem.pendingReviewId);
+      if (review) {
+        if (review.status === 'approved') {
+          mem.pendingReviewId = undefined;
+          await this.memory.save(mem);
+          await this.memory.logProgress(`Review ${review.id} approved; resuming mission ${mission?.id ?? 'unknown'}`);
+        } else if (review.status === 'rejected' || review.status === 'revised') {
+          mem.pendingReviewId = undefined;
+          if (mission && mission.status === 'in_progress') {
+            mission.status = 'failed';
+            await this.observability.increment('missionsFailed');
+          }
+          mem.currentState = 'idle';
+          mem.currentMissionId = undefined;
+          mem.currentPlan = undefined;
+          mem.reasoningContext = undefined;
+          await this.memory.save(mem);
+          await this.memory.logProgress(`Review ${review.id} ${review.status}: ${review.feedback ?? 'no feedback'}`);
+          return;
+        } else {
+          // Still pending; do nothing this tick.
+          return;
+        }
+      }
+    }
+
     if (mem.currentState === 'idle') {
       const nextMission = mem.missions.find((m) => m.status === 'backlog');
       if (nextMission) {
@@ -180,7 +216,24 @@ export class Cell {
           });
           mem.currentState = 'executing';
           break;
-        case 'executing':
+        case 'executing': {
+          const plan = mem.currentPlan;
+          if (plan && plan.steps.length > 0) {
+            const firstStep = plan.steps[0];
+            const gate = await this.hitl.check(
+              { stepId: firstStep.id, tool: firstStep.tool ?? 'unknown', input: firstStep.input ?? '' },
+              mission.id,
+              firstStep.id
+            );
+            if (!gate.ok) {
+              mem.currentState = 'paused';
+              mem.pendingReviewId = gate.review!.id;
+              await this.memory.save(mem);
+              await this.memory.logProgress(`Paused for human review ${gate.review!.id}: ${gate.review!.reason}`);
+              break;
+            }
+          }
+
           await this.runPhase(mission, 'executing', async () => {
             const checkpoint = mem.reasoningContext
               ? {
@@ -236,6 +289,7 @@ export class Cell {
           mem.reasoningContext = undefined;
           mem.currentState = 'verifying';
           break;
+        }
         case 'verifying':
           await this.runPhase(mission, 'verifying', async () => {
             const summary = await runVerificationSuite(this.config.verificationCommands, { observability: this.observability });
