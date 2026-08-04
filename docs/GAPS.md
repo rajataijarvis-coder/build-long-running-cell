@@ -56,7 +56,8 @@ This file tracks known mismatches between chapter documentation and the actual c
 
 #### 5b. Add `cell/src/llm/ollama-provider.ts`
 
-- **Status:** todo
+- **Status:** done
+- **Fixed by:** created `cell/src/llm/ollama-provider.ts` implementing `LLMProvider` for Ollama’s `/api/chat` endpoint. Updated `docs/GAPS.md` to mark this sub-gap complete.
 
 #### 5c. Add `cell/src/llm/openai-provider.ts` (OpenAI-compatible)
 
