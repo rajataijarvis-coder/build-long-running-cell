@@ -43,6 +43,7 @@ By the end of the course you will have a **Cell** that:
 | 24 | Capstone: orchestration |
 | 25 | Evaluation harness: measuring and improving the cell |
 | 26 | Verification traces: catching regressions before they compound |
+| 26 | Verification traces: catching regressions before they compound |
 
 ## Quick start
 
