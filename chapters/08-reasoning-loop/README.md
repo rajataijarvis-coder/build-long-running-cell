@@ -87,7 +87,8 @@ export class Reasoner {
     plan: Plan,
     priorThought: Thought | undefined,
     priorObservation: import('./types.js').Observation | undefined,
-    context: string
+    context: string,
+    retrievalContext?: string
   ): Thought {
     const stepNumber = priorThought ? this.stepIndexFromId(plan, priorThought.stepId) + 2 : 1;
     const step = this.selectStep(plan, stepNumber, priorObservation);

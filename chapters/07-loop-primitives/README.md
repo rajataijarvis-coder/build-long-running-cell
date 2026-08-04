@@ -102,7 +102,7 @@ export interface PlannerOptions {
 export class Planner {
   constructor(private readonly options: PlannerOptions = {}) {}
 
-  async plan(missionId: string, goal: string): Promise<Plan> {
+  async plan(missionId: string, goal: string, retrievalContext?: string): Promise<Plan> {
     const maxSteps = this.options.maxSteps ?? 5;
     const steps: PlanStep[] = [];
 
