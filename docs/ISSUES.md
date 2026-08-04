@@ -141,11 +141,13 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 **Problem:** The repo already has `Dockerfile`, `docker-compose.yml`, and launchd plist. The chapter should explain these real files, not give instructions that may diverge.
 
 **Fix:**
-- [ ] Read the actual `Dockerfile`, `docker-compose.yml`, and any plist/script files.
-- [ ] Update the chapter to reference them directly.
-- [ ] Add a verification step that builds the Docker image and runs it.
+- [x] Read the actual `Dockerfile`, `docker-compose.yml`, and any plist/script files.
+- [x] Update the chapter to reference them directly.
+- [x] Add a verification step that builds the Docker image and runs it.
 
-**Files:** `chapters/23-deployment/README.md`, `Dockerfile`, `docker-compose.yml`, `cell/scripts/*.plist`
+**Status:** Fixed in commit `583be6e`. Rewrote `chapters/23-deployment/README.md` to reference the real `Dockerfile`, `docker-compose.yml`, `frontend/Dockerfile.frontend`, `frontend/next.config.mjs`, `cell/com.build-long-running-cell.plist`, `cell/src/version.ts`, `cell/src/shutdown.ts`, `cell/src/main.ts`, root `package.json`, and the existing dashboard wiring. Added a chapter summary, updated the verification section to include `docker build -t build-long-running-cell:latest .`, and noted that paths in the plist must be edited for the reader's machine.
+
+**Files:** `chapters/23-deployment/README.md`, `Dockerfile`, `docker-compose.yml`, `cell/com.build-long-running-cell.plist`
 
 ---
 
