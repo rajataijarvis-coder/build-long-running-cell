@@ -299,6 +299,7 @@ export class Cell {
         case 'verifying':
           await this.runPhase(mission, 'verifying', async () => {
             const summary = await runVerificationSuite(this.config.verificationCommands, { observability: this.observability });
+            await this.recordVerificationTrace(mission.id, summary, mem);
             if (!summary.passed) {
               const failed = summary.results.find((r) => !r.passed)!;
               throw new Error(`Verification failed: ${failed.command}\n${failed.stderr}`);
@@ -369,5 +370,44 @@ export class Cell {
       return this.journal.byResult(result);
     }
     return this.journal.readAll();
+  }
+
+  /**
+   * Record a durable verification trace for a mission. Each attempt appends
+   * an entry so the evaluation harness can detect regressions and flakiness
+   * without rerunning the cell.
+   */
+  private async recordVerificationTrace(
+    missionId: string,
+    summary: import('./types.js').VerificationSummary,
+    mem: import('./types.js').CellMemory
+  ): Promise<void> {
+    mem.verificationTraces = mem.verificationTraces ?? [];
+    let trace = mem.verificationTraces.find((t) => t.missionId === missionId);
+    const now = new Date().toISOString();
+    const failed = summary.results.find((r) => !r.passed);
+    const note = failed ? `failed: ${failed.command}` : 'passed';
+    if (!trace) {
+      trace = {
+        missionId,
+        startedAt: now,
+        updatedAt: now,
+        entries: [],
+      };
+      mem.verificationTraces.push(trace);
+    }
+    trace.entries.push({
+      attempt: trace.entries.length + 1,
+      passed: summary.passed,
+      timestamp: now,
+      note,
+    });
+    trace.updatedAt = now;
+  }
+
+  /** List recorded verification traces for inspection or evaluation. */
+  async verificationTraces(): Promise<import('./types.js').VerificationTrace[]> {
+    const mem = await this.memory.load();
+    return mem.verificationTraces ?? [];
   }
 }

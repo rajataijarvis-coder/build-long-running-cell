@@ -7,6 +7,7 @@ import PlanPanel from '@/components/PlanPanel';
 import DeploymentPanel from '@/components/DeploymentPanel';
 import EvalPanel from '@/components/EvalPanel';
 import OrchestratorPanel from '@/components/OrchestratorPanel';
+import TracePanel from '@/components/TracePanel';
 
 interface Status {
   state: string;
@@ -387,6 +388,7 @@ export default function Home() {
 
       <OrchestratorPanel />
       <EvalPanel />
+      <TracePanel />
       <DeploymentPanel />
       <StatusPanel />
       <ObservabilityPanel />

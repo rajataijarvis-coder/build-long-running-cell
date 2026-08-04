@@ -1,7 +1,7 @@
 import { GitMemory, FailureMemory } from './git-memory.js';
 import { runVerificationSuite } from './verify.js';
 import { Observability } from './observability.js';
-import type { EvalRun, EvalTask, EvalResult } from './types.js';
+import type { EvalRun, EvalTask, EvalResult, EvalTrace } from './types.js';
 
 export interface EvaluationHarnessOptions {
   basePath: string;
@@ -134,6 +134,55 @@ export class EvaluationHarness {
         };
       }
 
+      case 'verification-traces': {
+        const traces = await this.traces();
+        if (traces.length === 0) {
+          return {
+            taskId: task.id,
+            status: 'passed',
+            score: 1,
+            detail: 'no verification traces recorded yet',
+          };
+        }
+
+        const perTraceScores = traces.map((t) => {
+          const total = t.entries.length;
+          const passed = t.entries.filter((e) => e.passed).length;
+          const latest = t.entries.at(-1);
+          return {
+            missionId: t.missionId,
+            total,
+            passed,
+            latestPassed: latest?.passed ?? false,
+            score: total === 0 ? 1 : passed / total,
+          };
+        });
+
+        const regressionCount = perTraceScores.filter((s) => s.total > 1 && !s.latestPassed && s.score >= 0.5).length;
+        const flakyCount = perTraceScores.filter((s) => s.total > 1 && s.latestPassed && s.score < 1).length;
+        const meanScore = perTraceScores.reduce((sum, s) => sum + s.score, 0) / perTraceScores.length;
+
+        const tracesDetail: EvalTrace[] = traces.slice(0, 5).map((t) => ({
+          missionId: t.missionId,
+          totalAttempts: t.entries.length,
+          passedAttempts: t.entries.filter((e) => e.passed).length,
+          latestPassed: t.entries.at(-1)?.passed ?? false,
+          history: t.entries.map((e) => ({
+            attempt: e.attempt,
+            passed: e.passed,
+            note: e.note,
+          })),
+        }));
+
+        return {
+          taskId: task.id,
+          status: regressionCount === 0 && flakyCount === 0 ? 'passed' : 'failed',
+          score: meanScore,
+          detail: `${regressionCount} regression(s), ${flakyCount} flaky, ${perTraceScores.length} trace(s)`,
+          trace: tracesDetail.length === 1 ? tracesDetail[0] : undefined,
+        };
+      }
+
       default:
         return {
           taskId: task.id,
@@ -142,6 +191,11 @@ export class EvaluationHarness {
           detail: `Unknown eval task: ${task.id}`,
         };
     }
+  }
+
+  private async traces() {
+    const mem = await this.memory.load();
+    return mem.verificationTraces ?? [];
   }
 
   private async appendRun(run: EvalRun): Promise<void> {
@@ -173,6 +227,11 @@ function defaultTasks(): EvalTask[] {
       id: 'failure-recall',
       name: 'Failure resolution rate',
       description: 'Check how many recent failures have been resolved.',
+    },
+    {
+      id: 'verification-traces',
+      name: 'Mission verification traces',
+      description: 'Detect regressions and flakiness from per-mission verification history.',
     },
   ];
 }

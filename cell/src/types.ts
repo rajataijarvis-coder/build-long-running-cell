@@ -312,6 +312,32 @@ export interface CellMemory {
   orchestrationRuns?: OrchestrationRun[];
   /** History of evaluation runs used to measure cell performance. */
   evalRuns?: EvalRun[];
+  /**
+   * Per-mission verification traces used by the evaluation harness to detect
+   * regressions and flaky missions. Written by the durable cell loop.
+   */
+  verificationTraces?: VerificationTrace[];
+}
+
+/** Durable per-mission verification history recorded by the cell loop. */
+export interface VerificationTrace {
+  missionId: string;
+  /** ISO timestamp of the first trace entry. */
+  startedAt: string;
+  /** ISO timestamp of the most recent trace entry. */
+  updatedAt: string;
+  entries: VerificationTraceEntry[];
+}
+
+export interface VerificationTraceEntry {
+  /** 1-based attempt number within this mission. */
+  attempt: number;
+  /** Whether every verification command passed on this attempt. */
+  passed: boolean;
+  /** ISO timestamp when this entry was recorded. */
+  timestamp: string;
+  /** Optional short note, e.g. the failing command or a retry reason. */
+  note?: string;
 }
 
 export interface EvalTask {
@@ -330,6 +356,22 @@ export interface EvalResult {
   detail?: string;
   /** For orchestration-backed tasks, the underlying orchestration run id. */
   runId?: string;
+  /**
+   * Optional structured trace produced by tasks that inspect per-mission
+   * verification history. Lets the dashboard render regression details.
+   */
+  trace?: EvalTrace;
+}
+
+/** A per-mission verification trace used for regression detection. */
+export interface EvalTrace {
+  missionId: string;
+  totalAttempts: number;
+  passedAttempts: number;
+  /** Whether the mission succeeded on the latest recorded attempt. */
+  latestPassed: boolean;
+  /** Ordered list of verification outcomes for this mission. */
+  history: Array<{ attempt: number; passed: boolean; note?: string }>;
 }
 
 export interface EvalRun {

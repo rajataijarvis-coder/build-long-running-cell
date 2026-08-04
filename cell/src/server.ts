@@ -475,6 +475,13 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
         return;
       }
 
+      if (url.pathname === '/traces') {
+        const cellInstance = cell;
+        const traces = await cellInstance.verificationTraces();
+        res.end(JSON.stringify({ ok: true, traces }));
+        return;
+      }
+
       if (url.pathname === '/lead' && req.method === 'POST') {
         const body = await readBody();
         const goal = String(body.goal ?? '');

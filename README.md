@@ -23,15 +23,26 @@ By the end of the course you will have a **Cell** that:
 | 04 | Git as memory: read/write mission state, progress log, decisions |
 | 05 | Execution journal: durable run records and resume |
 | 06 | Deterministic verification: build, lint, test gates |
-| 07 | Lead engineer cell: planner + coder |
-| 08 | Specialist cells: reader, reviewer, executor |
-| 09 | Inter-cell protocol: message passing and contracts |
-| 10 | Failure learning: classify, retry, escalate |
-| 11 | Memory growth: summary, pruning, retrieval |
-| 12 | Scheduling: cron, timers, backpressure |
-| 13 | Next.js dashboard: chat, status, live events |
-| 14 | Human-in-the-loop: approvals, overrides, handoffs |
-| 15 | Deployment: running your cell 24/7 |
+| 07 | Loop primitives: plan, act, observe |
+| 08 | The reasoning loop inside a cell |
+| 09 | ReAct: reasoning + tool use |
+| 10 | Reflection and self-correction |
+| 11 | Maker/checker subagents |
+| 12 | Memory and retrieval |
+| 13 | Multi-loop coordination |
+| 14 | Lead engineer cell |
+| 15 | Specialist cells |
+| 16 | Failure learning and retry |
+| 17 | Memory growth and summarisation |
+| 18 | Scheduling and backpressure |
+| 19 | Safety and guardrails |
+| 20 | Budget, cost, observability |
+| 21 | Next.js dashboard |
+| 22 | Human-in-the-loop |
+| 23 | Deployment: running 24/7 |
+| 24 | Capstone: orchestration |
+| 25 | Evaluation harness: measuring and improving the cell |
+| 26 | Verification traces: catching regressions before they compound |
 
 ## Quick start
 

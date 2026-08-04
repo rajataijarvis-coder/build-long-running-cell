@@ -36,6 +36,7 @@
 - [23 - Deployment: running 24/7](../chapters/23-deployment/)
 - [24 - Capstone: orchestration](../chapters/24-capstone-orchestration/)
 - [25 - Evaluation harness: measuring and improving the cell](../chapters/25-evaluation-harness/)
+- [26 - Verification traces: catching regressions before they compound](../chapters/26-verification-traces/)
 
 ## Status
 
@@ -66,3 +67,4 @@
 | 23 | published |
 | 24 | published |
 | 25 | published |
+| 26 | published |
