@@ -1,16 +1,18 @@
 # Chapter 23: Deployment — running 24/7
 
+> **Note:** In the course repository the files shown in this chapter already exist. This chapter explains how and why they are built. If you are following along from scratch, create the files as described.
+
 ## Learning goals
 
 By the end of this chapter you will be able to:
 
 1. Explain why a long-running cell needs health endpoints, graceful shutdown, and a process-manager contract to run continuously.
-2. Add `/health` and `/version` HTTP endpoints that expose state, uptime, and build version.
-3. Implement a `ShutdownManager` that stops background timers, closes the HTTP server, persists final state, and exits cleanly on SIGTERM/SIGINT.
-4. Package the cell with Docker and a `docker-compose.yml` that persists state across restarts.
-5. Provide a launchd plist for macOS and npm scripts (`start:cell:prod`, `start:frontend`, `start:prod`) for local process-runner deployment.
-6. Add a dashboard deployment panel that shows version, uptime, and health status pulled from the new endpoints.
-7. Verify the deployment wiring with `npm run verify`, manual health checks, and a test suite that exercises the new endpoints and shutdown behavior.
+2. Understand how `/health` and `/version` expose state, uptime, and build version.
+3. Explain how `onShutdown` closes the HTTP server, persists final state, and exits cleanly on SIGTERM/SIGINT.
+4. Read and adapt the real `Dockerfile` and `docker-compose.yml` to deploy the cell with persisted state.
+5. Use the real launchd plist and npm scripts (`start:cell:prod`, `start:frontend`, `start:prod`) for local process-runner deployment.
+6. Use the dashboard `DeploymentPanel` to inspect version, uptime, and health status.
+7. Verify the deployment wiring with `npm run verify`, manual health checks, `docker compose up --build`, and the test suite that exercises the new endpoints and shutdown behavior.
 
 ## Why this matters
 
@@ -40,15 +42,26 @@ This chapter adds the final production layer: deployment wiring. The cell alread
 
 ## Implementation
 
-### 1. Expose version from `package.json`
+The deployment wiring is already implemented in the repo. The sections below walk through the real files, explain the design decisions, and show how to verify them. Treat this as a guided tour of production code rather than a "create every file from scratch" exercise.
 
-Operators need to know which version of the cell is running. Create `cell/src/version.ts`:
+### 1. Expose version from `cell/src/version.ts`
+
+Operators need to know which version of the cell is running. The real file is `cell/src/version.ts`:
 
 ```ts
 import { createRequire } from 'module';
 
+/**
+ * Runtime version of the cell package.
+ *
+ * This is read from `cell/package.json` so operators can correlate running
+ * instances with source code. It is used by the /health and /version HTTP
+ * endpoints and by the dashboard deployment panel.
+ */
 export const CELL_VERSION: string = (() => {
   try {
+    // `import.meta.url` points at the compiled .js file inside dist/ at runtime,
+    // so `../package.json` resolves to cell/package.json.
     return createRequire(import.meta.url)('../package.json').version as string;
   } catch {
     return 'unknown';
@@ -58,14 +71,13 @@ export const CELL_VERSION: string = (() => {
 
 This reads `cell/package.json` at runtime. It works whether the cell is started from the source tree or from a compiled `dist/` directory because `import.meta.url` resolves to the executing `.js` file.
 
-### 2. Add `/health` and `/version` endpoints
+### 2. `/health` and `/version` endpoints
 
-Open `cell/src/server.ts` and add the two endpoints near the top of the route handler, before `/status`:
+The real endpoints live in `cell/src/server.ts`. Search the handler for `url.pathname === '/health'` and `url.pathname === '/version'`:
 
 ```ts
 import { CELL_VERSION } from './version.js';
 
-// inside the request handler:
 if (url.pathname === '/health') {
   const state = await cell.state();
   res.end(JSON.stringify({
@@ -96,9 +108,9 @@ if (url.pathname === '/version') {
 
 `/version` is a lightweight endpoint the dashboard can call to display the running build.
 
-### 3. Implement graceful shutdown
+### 3. Graceful shutdown
 
-Create `cell/src/shutdown.ts`:
+The real shutdown helper is `cell/src/shutdown.ts`:
 
 ```ts
 import type { Server } from 'http';
@@ -166,53 +178,39 @@ The contract is simple:
 3. Run optional cleanup (for the cell, we persist memory).
 4. Exit cleanly. If any step hangs, a hard timeout forces exit so the process manager does not wait forever.
 
-### 4. Wire shutdown into `main.ts`
+### 4. Wire shutdown into `cell/src/main.ts`
 
-Open `cell/src/main.ts`. Capture the server, the auto-tick interval, and the scheduler loop handle, then register shutdown:
+The production entry point is `cell/src/main.ts`. It uses the shared `ServerContext` created by `createLitFactoryContext` from `cell/src/factory.ts`, then registers graceful shutdown:
 
 ```ts
+import { startServer } from './server.js';
+import { createLitFactoryContext } from './factory.js';
 import { onShutdown } from './shutdown.js';
 import { CELL_VERSION } from './version.js';
 
-// ... create cell, budget, observability ...
+const basePath = process.cwd();
+
+const context = createLitFactoryContext({
+  basePath,
+  verificationCommands: [
+    ['npm', ['run', 'lint']],
+    ['npm', ['run', 'build']],
+    ['npm', ['test']],
+  ],
+});
 
 const port = Number(process.env.PORT ?? '3456');
-const server = startServer(cell, port, budget, observability);
-console.log(`Cell version ${CELL_VERSION} starting on port ${port}`);
-
-let tickInterval: NodeJS.Timeout | undefined;
-const autoTick = process.env.AUTO_TICK === 'true';
-if (autoTick) {
-  tickInterval = setInterval(() => {
-    cell.tick().catch((err) => console.error('Tick failed', err));
-  }, 5000);
-}
-
-let schedulerStop: (() => void) | undefined;
-const autoSchedule = process.env.AUTO_SCHEDULE === 'true';
-if (autoSchedule) {
-  const scheduler = new Scheduler({ basePath, verificationCommands, maxConcurrency: 1, minIntervalMs: 5000, budget, observability });
-  schedulerStop = startSchedulerLoop(scheduler, 60_000, (results) => {
-    if (results.length > 0) {
-      console.log(`Scheduler tick produced ${results.length} result(s)`);
-      for (const r of results) {
-        console.log(`  ${r.taskId}: ran=${r.ran}${r.error ? ` error=${r.error}` : ''}`);
-      }
-    }
-  }).stop;
-}
+const server = startServer(context, port);
 
 onShutdown(server, {
-  stopTimers: () => {
-    if (tickInterval) clearInterval(tickInterval);
-    schedulerStop?.();
-  },
-  onShutdown: () => cell.flush(),
+  onShutdown: () => context.cell.flush(),
   timeoutMs: Number(process.env.SHUTDOWN_TIMEOUT_MS ?? '10000'),
 });
+
+console.log(`[cell ${CELL_VERSION}] lit-factory mode running on port ${port}`);
 ```
 
-Also add a `flush()` method to the `Cell` class in `cell/src/cell.ts` so shutdown can persist the current memory snapshot without reaching into private fields:
+The `flush()` method in `cell/src/cell.ts` persists the current memory snapshot before exit:
 
 ```ts
 /** Persist the current memory snapshot to disk. Called before shutdown. */
@@ -224,14 +222,13 @@ async flush(): Promise<void> {
 
 With this wiring, sending `SIGTERM` to the cell will:
 
-- Stop the auto-tick interval and scheduler loop.
-- Close the HTTP server.
-- Save memory.
-- Exit with code 0.
+- Stop the HTTP server.
+- Persist the final memory snapshot.
+- Exit with code 0, or exit 1 if cleanup hangs past the timeout.
 
-### 5. Add production npm scripts
+### 5. Production npm scripts
 
-Open the root `package.json` and add scripts that a process manager can call directly:
+The real root `package.json` already has the scripts a process manager needs:
 
 ```json
 {
@@ -250,30 +247,44 @@ Open the root `package.json` and add scripts that a process manager can call dir
 
 `start:cell:prod` is the command a systemd or launchd service runs. It builds the cell, enables auto-tick, and enables the scheduler loop. `start:prod` is a convenience for local testing that runs both the cell and the dashboard.
 
+There are also dedicated dark-factory scripts in `cell/package.json`: `dev:dark` and `start:dark`. They run `cell/dist/main-dark.js`, which uses `createDarkFactoryContext` from `cell/src/factory.ts` to disable human approval gates while keeping guardrails, verification, and budgets active. See `docs/FACTORY_MODES.md` for details.
+
 ### 6. Containerise the cell
 
-Create a root `Dockerfile`:
+The real container packaging is in the repo root. Open `Dockerfile`:
 
 ```dockerfile
 # syntax=docker/dockerfile:1
+#
+# Dockerfile for the long-running cell.
+#
+# This image builds the entire monorepo (cell + frontend) and then runs the
+# cell HTTP server. The dashboard is usually deployed separately, but keeping
+# the build in one image proves the whole stack compiles before the cell is
+# shipped.
 
 FROM node:20-alpine AS builder
 WORKDIR /app
 
+# Install workspace dependencies first so Docker can cache the layer.
 COPY package*.json ./
 COPY cell/package*.json ./cell/
 COPY frontend/package*.json ./frontend/
 COPY scripts/package*.json ./scripts/
 RUN npm ci --workspaces
 
+# Copy source and run the verification pipeline.
 COPY . .
 RUN npm run verify
+
+# ---------------------------------------------------------------------------
 
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3456
 
+# Only copy what the cell needs at runtime.
 COPY --from=builder /app/cell/dist ./cell/dist
 COPY --from=builder /app/cell/package.json ./cell/package.json
 COPY --from=builder /app/package*.json ./
@@ -282,11 +293,19 @@ EXPOSE 3456
 CMD ["node", "cell/dist/main.js"]
 ```
 
-The builder stage installs dependencies, copies the source, and runs the full verification pipeline. The runner stage copies only the compiled cell, keeping the image small. The default `CMD` does not enable auto-tick or scheduling; you override that in `docker-compose.yml` or Kubernetes manifests.
+The builder stage installs dependencies, copies the source, and runs the full verification pipeline. The runner stage copies only the compiled cell, keeping the image small. The default `CMD` does not enable auto-tick or scheduling; you override that in `docker-compose.yml`.
 
-Create `docker-compose.yml` to run the cell and dashboard together:
+The real `docker-compose.yml` runs the cell and dashboard together:
 
 ```yaml
+# Docker Compose for local production-like deployment.
+#
+# Run with:
+#   docker compose up --build
+#
+# The cell runs continuously with AUTO_TICK and AUTO_SCHEDULE enabled. The
+# dashboard is built and served by Next.js, pointing at the cell container.
+
 services:
   cell:
     build:
@@ -299,7 +318,11 @@ services:
       - PORT=3456
       - AUTO_TICK=true
       - AUTO_SCHEDULE=true
+      - CELL_TOKEN_LIMIT=0
+      - CELL_COST_LIMIT=0
+      - CELL_RUNTIME_LIMIT_MS=0
     volumes:
+      # Persist state, memory, and journal across container restarts.
       - cell-state:/app/state
       - cell-memory:/app/memory
     healthcheck:
@@ -329,10 +352,14 @@ volumes:
 
 The healthcheck is the real `/health` endpoint, so Docker can tell when the cell is ready before it starts the dashboard. State and memory are stored in named volumes so they survive container restarts.
 
-Create `frontend/Dockerfile.frontend`:
+The dashboard image is built from `frontend/Dockerfile.frontend`:
 
 ```dockerfile
 # syntax=docker/dockerfile:1
+#
+# Dockerfile for the Next.js dashboard.
+#
+# Build the dashboard image and point it at the cell with CELL_URL.
 
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -356,7 +383,7 @@ EXPOSE 3000
 CMD ["node", "server.js"]
 ```
 
-To make the standalone output work, update `frontend/next.config.mjs`:
+The standalone output is enabled in `frontend/next.config.mjs`:
 
 ```mjs
 /** @type {import('next').NextConfig} */
@@ -371,9 +398,11 @@ const nextConfig = {
 export default nextConfig;
 ```
 
-### 7. Add a launchd plist for macOS
+The real `Dockerfile` differs slightly from a hand-written "create this file" example: it includes comments, it builds the whole monorepo, and it passes `npm run verify` during the image build so a broken build cannot be shipped.
 
-If you are running on macOS, create `cell/com.build-long-running-cell.plist`:
+### 7. Launchd plist for macOS
+
+The real plist is `cell/com.build-long-running-cell.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -382,29 +411,44 @@ If you are running on macOS, create `cell/com.build-long-running-cell.plist`:
 <dict>
   <key>Label</key>
   <string>com.build-long-running-cell</string>
+
   <key>WorkingDirectory</key>
   <string>/Users/rajatjarvis/Downloads/projects/build-long-running-cell/cell</string>
+
   <key>ProgramArguments</key>
   <array>
     <string>/usr/local/bin/node</string>
     <string>dist/main.js</string>
   </array>
+
   <key>EnvironmentVariables</key>
   <dict>
-    <key>NODE_ENV</key><string>production</string>
-    <key>AUTO_TICK</key><string>true</string>
-    <key>AUTO_SCHEDULE</key><string>true</string>
-    <key>PORT</key><string>3456</string>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>AUTO_TICK</key>
+    <string>true</string>
+    <key>AUTO_SCHEDULE</key>
+    <string>true</string>
+    <key>PORT</key>
+    <string>3456</string>
   </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
   <key>StandardOutPath</key>
   <string>/Users/rajatjarvis/Downloads/projects/build-long-running-cell/cell/logs/cell.log</string>
+
   <key>StandardErrorPath</key>
   <string>/Users/rajatjarvis/Downloads/projects/build-long-running-cell/cell/logs/cell-error.log</string>
 </dict>
 </plist>
 ```
+
+**Important:** Update `WorkingDirectory`, `StandardOutPath`, and `StandardErrorPath` to match your own machine before installing. The repo path is specific to the original author.
 
 Install it with:
 
@@ -414,44 +458,38 @@ cp cell/com.build-long-running-cell.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.build-long-running-cell.plist
 ```
 
-### 8. Add a deployment panel to the dashboard
+### 8. Deployment panel
 
-Create `frontend/src/app/api/cell/health/route.ts`:
+The real dashboard wiring is already in the repo:
 
-```ts
-import { NextResponse } from 'next/server';
-import { cellFetch } from '@/lib/cell';
+- `frontend/src/app/api/cell/health/route.ts` proxies `/health`.
+- `frontend/src/app/api/cell/version/route.ts` proxies `/version`.
+- `frontend/src/components/DeploymentPanel.tsx` polls both endpoints every five seconds and renders version, cell state, uptime, and a status badge.
 
-export async function GET() {
-  try {
-    const { data } = await cellFetch('/health');
-    return NextResponse.json(data);
-  } catch (err) {
-    return NextResponse.json(
-      { ok: false, status: 'offline', error: (err as Error).message },
-      { status: 503 }
-    );
-  }
-}
-```
-
-Create `frontend/src/app/api/cell/version/route.ts` similarly.
-
-Create `frontend/src/components/DeploymentPanel.tsx`. It polls `/api/cell/health` and `/api/cell/version` every five seconds and renders version, cell state, uptime, and a status badge. The implementation is included in this commit.
-
-Then import and use it at the top of `frontend/src/app/page.tsx`:
+Open `frontend/src/app/page.tsx` and you will see the panel imported and rendered near the top of the dashboard:
 
 ```tsx
 import DeploymentPanel from '@/components/DeploymentPanel';
 
-// ... inside the main return:
+// ...
+<OrchestratorPanel />
+<EvalPanel />
+<TracePanel />
 <DeploymentPanel />
 <StatusPanel />
-<ObservabilityPanel />
-<PlanPanel status={status} />
 ```
 
-### 9. Test the new wiring
+### 9. Test the deployment wiring
+
+The real tests are in the repo:
+
+- `cell/src/server.test.ts` checks `/health`, `/version`, and `/status`.
+- `cell/src/server.integration.test.ts` checks that the HTTP API and the cell loop share the same `Guardrails`, `HumanInTheLoop`, and `MemoryStore` (see issue P0.1 and P4.1).
+- `cell/src/shutdown.test.ts` checks that `onShutdown` registers, unregisters, stops timers, calls cleanup, and exits cleanly.
+
+Read those files to see the actual assertions. The key point is that the deployment surface is not just manually tested — it is part of the `npm run verify` pipeline.
+
+### 9. Test the deployment wiring
 
 Create `cell/src/server.test.ts`:
 
@@ -571,7 +609,21 @@ describe('onShutdown', () => {
 
 These tests ensure the deployment surface is wired correctly and behaves predictably.
 
-## Verification
+### 10. Chapter summary
+
+This chapter is a guided tour of the real deployment files in the repo rather than a scratch-rewrite exercise. Key takeaways:
+
+- `cell/src/version.ts` reads the package version at runtime so `/health` and `/version` can report it.
+- `cell/src/server.ts` already exposes `/health` and `/version`, using the shared `ServerContext` so they see the same cell state as the loop.
+- `cell/src/shutdown.ts` provides `onShutdown`, which closes the server, runs cleanup, and exits cleanly.
+- `cell/src/main.ts` wires `createLitFactoryContext` + `startServer` + `onShutdown`.
+- Root `package.json` scripts (`start:cell:prod`, `start:frontend`, `start:prod`) are the process-manager entry points.
+- `Dockerfile` and `docker-compose.yml` package the cell and dashboard with persisted volumes and a real `/health` healthcheck.
+- `cell/com.build-long-running-cell.plist` is a macOS launchd example that must be edited for your own paths.
+- The dashboard `DeploymentPanel`, `frontend/src/app/api/cell/health/route.ts`, and `version/route.ts` already proxy the new endpoints.
+- Automated tests cover the endpoints, shutdown, and shared-services integration.
+
+The verification step at the end proves the deployment wiring is correct and the image can be built.
 
 Run the full stack verification from the repository root:
 
@@ -582,17 +634,21 @@ npm run verify
 
 This runs:
 
-1. Cell lint, TypeScript build, and all cell tests — including the new server and shutdown suites.
-2. Next.js dashboard build, which type-checks the new deployment panel and API routes.
+1. Cell lint, TypeScript build, and all cell tests — including the server, shutdown, and shared-services integration suites.
+2. Next.js dashboard build, which type-checks the deployment panel and API routes.
 
-You should see the new tests pass:
+You should see the tests pass:
 
 ```text
+▶ Server + Cell shared services
+  ✔ shares guardrails approval between HTTP API and cell loop
+  ✔ shares HITL reviews between HTTP API and cell loop
 ▶ HTTP server endpoints
   ✔ /health returns status, state, uptime and version
   ✔ /version returns the cell version
+  ✔ /status still returns the cell state and mission
 ▶ onShutdown
-  ✔ registers and unregisters handlers
+  ✔ registers and unregisters SIGTERM/SIGINT handlers
   ✔ stops timers and closes the server when shutdown is invoked
 ```
 
@@ -620,10 +676,19 @@ If the cell exits with code 0 and the logs show `Shutdown complete.`, the gracef
 For Docker:
 
 ```bash
+cd /Users/rajatjarvis/Downloads/projects/build-long-running-cell
 docker compose up --build
 ```
 
-After the healthcheck passes, the dashboard should be available at http://localhost:3000 and the cell at http://localhost:3456.
+After the healthcheck passes, the dashboard should be available at http://localhost:3000 and the cell at http://localhost:3456. The dashboard proxies requests to `CELL_URL=http://cell:3456` inside the compose network.
+
+If Docker is available, verify the image build directly:
+
+```bash
+docker build -t build-long-running-cell:latest .
+```
+
+A successful build proves that the `Dockerfile` can install dependencies, run `npm run verify`, and produce a runnable cell image. This is the final deployment verification step.
 
 ## Practical exercises
 
