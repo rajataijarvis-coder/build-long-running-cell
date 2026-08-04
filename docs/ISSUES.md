@@ -198,6 +198,12 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 
 ---
 
+---
+
+**Status:** All issues resolved.
+
+---
+
 ## Suggested fix order
 
 1. **P0.2 + P0.3** — Make `/verify` and `/plan` use the cell's real configuration. These are correctness bugs.
