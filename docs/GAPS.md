@@ -61,7 +61,8 @@ This file tracks known mismatches between chapter documentation and the actual c
 
 #### 5c. Add `cell/src/llm/openai-provider.ts` (OpenAI-compatible)
 
-- **Status:** todo
+- **Status:** done
+- **Fixed by:** created `cell/src/llm/openai-provider.ts` implementing `LLMProvider` for OpenAI-compatible `/v1/chat/completions` endpoints. Supports custom `baseUrl` so it also works with any OpenAI-compatible proxy. Updated `docs/GAPS.md` to mark this sub-gap complete.
 
 #### 5d. Add `cell/src/llm/factory.ts` to create a provider from env vars
 
