@@ -56,6 +56,7 @@ export class Cell {
 
   constructor(config: CellConfig) {
     this.config = config;
+    this.basePath = config.basePath;
     this.memory = new GitMemory(config.basePath);
     this.journal = new ExecutionJournal(config.basePath);
 
@@ -103,6 +104,9 @@ export class Cell {
       defaultRegistry
     );
   }
+
+  /** Expose the workspace base path so callers (e.g., the HTTP server) can create co-located durable stores. */
+  readonly basePath: string;
 
   async state(): Promise<CellState> {
     return (await this.memory.load()).currentState;

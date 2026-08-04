@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "test": "node --test dist/**/*.test.js",
+    "test": "node --test \"dist/**/*.test.js\"",
     "lint": "eslint src --ext .ts",
     "dev": "node --watch dist/main.js",
     "verify": "npm run lint && npm run build && npm test"

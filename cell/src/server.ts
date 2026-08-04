@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'http';
 import { Cell } from './cell.js';
 import { runVerificationSuite } from './verify.js';
+import { GitMemory, FailureMemory } from './git-memory.js';
 import { Planner } from './planner.js';
+import { MemoryStore } from './memory-store.js';
 import { Actor } from './actor.js';
 import { Observer } from './observer.js';
 import { Reasoner } from './reasoner.js';
@@ -9,11 +11,8 @@ import { Reflector } from './reflector.js';
 import { ToolRegistryImpl, ShellTool } from './tools.js';
 import { MakerSubAgent, CheckerSubAgent } from './subagent.js';
 import { CellNetwork } from './network.js';
-import { MemoryStore } from './memory-store.js';
-import { RetrievalEngine } from './retrieval.js';
 import { Coordinator } from './coordinator.js';
 import { LeadEngineer } from './lead.js';
-import { GitMemory, FailureMemory } from './git-memory.js';
 import { MemorySummariser, SummaryMemory } from './summary.js';
 import { Scheduler } from './scheduler.js';
 import { Guardrails, hashAction } from './guardrails.js';
@@ -23,9 +22,33 @@ import { HumanInTheLoop } from './hitl.js';
 import { CELL_VERSION } from './version.js';
 import { Orchestrator } from './orchestrator.js';
 import { EvaluationHarness } from './eval.js';
+import { RetrievalEngine } from './retrieval.js';
 import type { HITLStatus, HumanReview, JournalEntry, Mission } from './types.js';
 
+export interface ServerContext {
+  cell: Cell;
+  basePath: string;
+  budget: BudgetTracker;
+  observability: Observability;
+  guardrails: Guardrails;
+  hitl: HumanInTheLoop;
+  memoryStore: MemoryStore;
+  retrieval: RetrievalEngine;
+}
+
 export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, observability?: Observability) {
+  const basePath = cell.basePath;
+  const sharedBudget = budget ?? new BudgetTracker({ basePath });
+  const sharedObservability = observability ?? new Observability({ basePath });
+  const guardrails = new Guardrails({
+    workspacePath: basePath,
+    defaultAllowList: ['npm', 'node', 'echo', 'ls'],
+    requireApprovalForDestructive: true,
+    approvedDestructive: new Set<string>(),
+  });
+  const hitl = new HumanInTheLoop({ basePath });
+  const memoryStore = new MemoryStore({ basePath });
+
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
     res.setHeader('Content-Type', 'application/json');
@@ -45,7 +68,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
 
     try {
       if (url.pathname === '/budget') {
-        const tracker = budget ?? new BudgetTracker({ basePath: process.cwd() });
+        const tracker = sharedBudget;
         if (req.method === 'GET') {
           const status = await tracker.check();
           res.end(JSON.stringify({ ok: status.ok, reason: status.reason, budget: status.budget }));
@@ -70,7 +93,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       }
 
       if (url.pathname === '/metrics') {
-        const metrics = observability ?? new Observability({ basePath: process.cwd() });
+        const metrics = sharedObservability;
         if (req.method === 'GET') {
           const snapshot = await metrics.snapshot();
           const health = metrics.health(snapshot);
@@ -116,13 +139,11 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       }
 
       if (url.pathname === '/missions' && req.method === 'POST') {
-        let body = '';
-        req.on('data', (chunk) => { body += chunk; });
-        req.on('end', async () => {
-          const { title, description } = JSON.parse(body);
-          const mission = await cell.queueMission(title, description);
-          res.end(JSON.stringify({ ok: true, mission }));
-        });
+        const body = await readBody();
+        const title = String(body.title ?? '');
+        const description = String(body.description ?? '');
+        const mission = await cell.queueMission(title, description);
+        res.end(JSON.stringify({ ok: true, mission }));
         return;
       }
 
@@ -138,7 +159,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
           ['npm', ['run', 'lint']],
           ['npm', ['run', 'build']],
           ['npm', ['test']],
-        ], { observability });
+        ], { observability: sharedObservability });
         res.statusCode = summary.passed ? 200 : 500;
         res.end(JSON.stringify({ ok: summary.passed, summary }));
         return;
@@ -173,12 +194,6 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
 
       if (url.pathname === '/guardrails/check' && req.method === 'POST') {
         const body = await readBody();
-        const guardrails = new Guardrails({
-          workspacePath: process.cwd(),
-          defaultAllowList: ['npm', 'node', 'echo', 'ls'],
-          requireApprovalForDestructive: true,
-          approvedDestructive: new Set<string>(),
-        });
         const result = guardrails.check({
           stepId: 'manual',
           tool: String(body.tool ?? 'shell'),
@@ -190,12 +205,6 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
 
       if (url.pathname === '/guardrails/approve' && req.method === 'POST') {
         const body = await readBody();
-        const guardrails = new Guardrails({
-          workspacePath: process.cwd(),
-          defaultAllowList: ['npm', 'node', 'echo', 'ls'],
-          requireApprovalForDestructive: true,
-          approvedDestructive: new Set<string>(),
-        });
         const action = {
           stepId: 'manual',
           tool: String(body.tool ?? 'shell'),
@@ -208,7 +217,6 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       }
 
       if (url.pathname === '/reviews') {
-        const hitl = new HumanInTheLoop({ basePath: process.cwd() });
         const status = url.searchParams.get('status') as HumanReview['status'] | null;
         let reviews = await hitl.list();
         if (status) {
@@ -219,7 +227,6 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       }
 
       if (url.pathname === '/reviews/pending') {
-        const hitl = new HumanInTheLoop({ basePath: process.cwd() });
         const reviews = await hitl.pending();
         res.end(JSON.stringify({ ok: true, reviews }));
         return;
@@ -227,7 +234,6 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
 
       if (url.pathname === '/reviews/resolve' && req.method === 'POST') {
         const body = await readBody();
-        const hitl = new HumanInTheLoop({ basePath: process.cwd() });
         const review = await hitl.resolve(
           String(body.reviewId ?? ''),
           body.verdict as HITLStatus,
@@ -335,9 +341,8 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
           topK = Number(url.searchParams.get('topK') ?? 5);
         }
 
-        const store = new MemoryStore({ basePath: process.cwd() });
         const engine = new RetrievalEngine({ topK });
-        let docs = await store.loadAll();
+        let docs = await memoryStore.loadAll();
         if (kind) docs = docs.filter((d) => d.kind === kind);
         if (missionId) docs = docs.filter((d) => d.missionId === missionId);
         const results = query ? engine.retrieve(query, docs) : docs.map((d) => ({ document: d, score: 1 }));
@@ -348,7 +353,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       if (url.pathname === '/failures') {
         const kind = url.searchParams.get('kind') ?? undefined;
         const limit = Number(url.searchParams.get('limit') ?? '20');
-        const memory = new FailureMemory(new GitMemory(process.cwd()));
+        const memory = new FailureMemory(new GitMemory(basePath));
         let failures = await memory.recent(limit);
         if (kind) {
           failures = failures.filter((f) => f.kind === kind);
@@ -360,7 +365,8 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       if (url.pathname === '/summaries' && req.method === 'GET') {
         const kind = url.searchParams.get('kind') ?? undefined;
         const query = url.searchParams.get('query') ?? undefined;
-        const summaryMemory = new SummaryMemory(new GitMemory(process.cwd()));
+        const gitMemory = new GitMemory(basePath);
+        const summaryMemory = new SummaryMemory(gitMemory);
         let summaries = await summaryMemory.list();
         if (kind) summaries = summaries.filter((s) => s.kind === kind);
         if (query) summaries = await summaryMemory.search(query);
@@ -370,15 +376,15 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
 
       if (url.pathname === '/summaries' && req.method === 'POST') {
         const body = await readBody();
-        const gitMemory = new GitMemory(process.cwd());
-        const cell = await gitMemory.load();
+        const gitMemory = new GitMemory(basePath);
+        const cellMem = await gitMemory.load();
         const kinds = Array.isArray(body.kinds) ? (body.kinds as import('./types.js').SummaryKind[]) : undefined;
         const summariser = new MemorySummariser({
           minSources: Number(body.minSources ?? 3),
           maxSources: Number(body.maxSources ?? 20),
-          store: new MemoryStore({ basePath: process.cwd() }),
+          store: new MemoryStore({ basePath }),
         });
-        const newSummaries = await summariser.summarise(cell, kinds);
+        const newSummaries = await summariser.summarise(cellMem, kinds);
         const summaryMemory = new SummaryMemory(gitMemory, {
           maxSummaries: Number(body.maxSummaries ?? 50),
           retention: body.retention === 'lru' || body.retention === 'lfu' || body.retention === 'age' ? body.retention : 'lru',
@@ -400,7 +406,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
           updatedAt: String(m.updatedAt ?? new Date().toISOString()),
         }));
         const coordinator = new Coordinator({
-          basePath: process.cwd(),
+          basePath,
           verificationCommands: [
             ['npm', ['run', 'lint']],
             ['npm', ['run', 'build']],
@@ -423,7 +429,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
           return;
         }
         const orchestrator = new Orchestrator({
-          basePath: process.cwd(),
+          basePath,
           verificationCommands: [
             ['npm', ['run', 'lint']],
             ['npm', ['run', 'build']],
@@ -433,8 +439,8 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
           maxRetries: Number(body.maxRetries ?? 2),
           maxSubMissions: Number(body.maxSubMissions ?? 4),
           useSpecialists: true,
-          budget,
-          observability,
+          budget: sharedBudget,
+          observability: sharedObservability,
         });
         const run = await orchestrator.run(goal);
         res.end(JSON.stringify({ ok: run.status === 'done', run }));
@@ -443,7 +449,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
 
       if (url.pathname === '/orchestrator/runs') {
         const orchestrator = new Orchestrator({
-          basePath: process.cwd(),
+          basePath,
           verificationCommands: [],
         });
         const runs = await orchestrator.list(Number(url.searchParams.get('limit') ?? 20));
@@ -454,13 +460,13 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       if (url.pathname === '/eval' && req.method === 'POST') {
         const body = await readBody();
         const harness = new EvaluationHarness({
-          basePath: process.cwd(),
+          basePath,
           verificationCommands: [
             ['npm', ['run', 'lint']],
             ['npm', ['run', 'build']],
             ['npm', ['test']],
           ],
-          observability,
+          observability: sharedObservability,
         });
         const taskIds = Array.isArray(body.taskIds) ? body.taskIds as string[] : undefined;
         const run = await harness.run(taskIds);
@@ -469,7 +475,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       }
 
       if (url.pathname === '/eval/runs') {
-        const harness = new EvaluationHarness({ basePath: process.cwd() });
+        const harness = new EvaluationHarness({ basePath });
         const runs = await harness.list(Number(url.searchParams.get('limit') ?? 20));
         res.end(JSON.stringify({ ok: true, runs }));
         return;
@@ -490,10 +496,9 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
           res.end(JSON.stringify({ ok: false, error: 'goal is required' }));
           return;
         }
-        const failureMemory = new FailureMemory(new GitMemory(process.cwd()));
-        const leadObservability = observability ?? new Observability({ basePath: process.cwd() });
+        const failureMemory = new FailureMemory(new GitMemory(basePath));
         const lead = new LeadEngineer({
-          basePath: process.cwd(),
+          basePath,
           verificationCommands: [
             ['npm', ['run', 'lint']],
             ['npm', ['run', 'build']],
@@ -503,9 +508,9 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
           maxRetries: Number(body.maxRetries ?? 2),
           maxSubMissions: Number(body.maxSubMissions ?? 4),
           useSpecialists: Boolean(body.useSpecialists),
-          memory: new GitMemory(process.cwd()),
+          memory: new GitMemory(basePath),
           failureMemory,
-          observability: leadObservability,
+          observability: sharedObservability,
         });
         const result = await lead.execute(goal);
         res.end(JSON.stringify({ ok: true, result }));
@@ -514,17 +519,15 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
 
       if (url.pathname === '/schedule' && req.method === 'POST') {
         const body = await readBody();
-        const schedulerBudget = budget ?? new BudgetTracker({ basePath: process.cwd() });
-        const schedulerObs = observability ?? new Observability({ basePath: process.cwd() });
         const scheduler = new Scheduler({
-          basePath: process.cwd(),
+          basePath,
           verificationCommands: [
             ['npm', ['run', 'lint']],
             ['npm', ['run', 'build']],
             ['npm', ['test']],
           ],
-          budget: schedulerBudget,
-          observability: schedulerObs,
+          budget: sharedBudget,
+          observability: sharedObservability,
         });
         const task = await scheduler.schedule({
           name: String(body.name ?? 'scheduled-task'),
@@ -539,7 +542,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       }
 
       if (url.pathname === '/tasks') {
-        const scheduler = new Scheduler({ basePath: process.cwd() });
+        const scheduler = new Scheduler({ basePath });
         const tasks = await scheduler.list();
         res.end(JSON.stringify({ ok: true, tasks }));
         return;
@@ -547,12 +550,10 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
 
       const runTaskMatch = url.pathname.match(/^\/tasks\/([^/]+)\/run$/);
       if (runTaskMatch && req.method === 'POST') {
-        const schedulerBudget = budget ?? new BudgetTracker({ basePath: process.cwd() });
-        const schedulerObs = observability ?? new Observability({ basePath: process.cwd() });
         const scheduler = new Scheduler({
-          basePath: process.cwd(),
-          budget: schedulerBudget,
-          observability: schedulerObs,
+          basePath,
+          budget: sharedBudget,
+          observability: sharedObservability,
         });
         const result = await scheduler.runTask(runTaskMatch[1]);
         res.end(JSON.stringify({ ok: !result.error, result }));
@@ -562,7 +563,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       const taskMatch = url.pathname.match(/^\/tasks\/([^/]+)$/);
       if (taskMatch && req.method === 'PATCH') {
         const body = await readBody();
-        const scheduler = new Scheduler({ basePath: process.cwd() });
+        const scheduler = new Scheduler({ basePath });
         const updated = await scheduler.update(taskMatch[1], {
           name: body.name !== undefined ? String(body.name) : undefined,
           cron: body.cron !== undefined ? String(body.cron) : undefined,
@@ -581,7 +582,7 @@ export function startServer(cell: Cell, port = 3456, budget?: BudgetTracker, obs
       }
 
       if (taskMatch && req.method === 'DELETE') {
-        const scheduler = new Scheduler({ basePath: process.cwd() });
+        const scheduler = new Scheduler({ basePath });
         const removed = await scheduler.remove(taskMatch[1]);
         if (!removed) {
           res.statusCode = 404;
