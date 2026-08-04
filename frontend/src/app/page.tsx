@@ -92,6 +92,12 @@ interface LeadResult {
   error?: string;
 }
 
+interface GuardrailCheck {
+  ok: boolean;
+  rule?: { id: string; name: string; reason: string };
+  note: string;
+}
+
 export default function Home() {
   const [status, setStatus] = useState<Status | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -112,6 +118,25 @@ export default function Home() {
   const [taskCron, setTaskCron] = useState('0 * * * *');
   const [taskAction, setTaskAction] = useState<'mission' | 'lead' | 'verify'>('verify');
   const [taskPayload, setTaskPayload] = useState('');
+  const [guardInput, setGuardInput] = useState('');
+  const [guardTool, setGuardTool] = useState('shell');
+  const [guardResult, setGuardResult] = useState<GuardrailCheck | null>(null);
+
+  async function checkGuardrails() {
+    setLogs((l) => [...l, `Checking guardrails for ${guardTool}: ${guardInput}`]);
+    const res = await fetch('/api/cell/guardrails/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool: guardTool, input: guardInput }),
+    });
+    const data = await res.json();
+    setGuardResult(data);
+    if (data.ok) {
+      setLogs((l) => [...l, 'Guardrails passed']);
+    } else {
+      setLogs((l) => [...l, `Guardrails blocked: ${data.rule?.name ?? data.note}`]);
+    }
+  }
 
   async function fetchStatus() {
     const res = await fetch('/api/cell/status');
@@ -331,6 +356,43 @@ export default function Home() {
   return (
     <main className="p-6 max-w-4xl mx-auto">
       <h1 className="text-3xl font-bold mb-4">Long-Running Cell Dashboard</h1>
+
+      <section className="rounded-lg border border-slate-700 p-4 mb-6">
+        <h2 className="text-xl font-semibold mb-2">Safety & Guardrails</h2>
+        <p className="text-sm text-slate-400 mb-3">
+          Inspect every proposed action before it reaches a tool. Guardrails catch prompt injection, shell metacharacters, path traversal, unapproved destructive commands, and network egress.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <select
+            value={guardTool}
+            onChange={(e) => setGuardTool(e.target.value)}
+            className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
+          >
+            <option value="shell">shell</option>
+            <option value="read_file">read_file</option>
+            <option value="edit_file">edit_file</option>
+            <option value="fetch">fetch</option>
+          </select>
+          <input
+            value={guardInput}
+            onChange={(e) => setGuardInput(e.target.value)}
+            placeholder='Command or path to validate, e.g. "echo hello" or "../outside.txt"'
+            className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1"
+          />
+          <button
+            onClick={checkGuardrails}
+            className="px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 transition"
+          >
+            Check
+          </button>
+        </div>
+        {guardResult && (
+          <div className={`rounded p-3 text-sm ${guardResult.ok ? 'bg-emerald-900/30 text-emerald-300' : 'bg-rose-900/30 text-rose-300'}`}>
+            <p>{guardResult.ok ? 'Passed' : 'Blocked'}: {guardResult.note}</p>
+            {guardResult.rule && <p className="text-xs mt-1">Rule: {guardResult.rule.name}</p>}
+          </div>
+        )}
+      </section>
 
       <section className="rounded-lg border border-slate-700 p-4 mb-6">
         <h2 className="text-xl font-semibold mb-2">Status</h2>

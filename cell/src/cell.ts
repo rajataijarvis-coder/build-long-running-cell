@@ -6,6 +6,7 @@ import { Planner } from './planner.js';
 import { ShellTool, ReadFileTool, EditFileTool, VerifyTool, ToolRegistryImpl } from './tools.js';
 import { Reasoner } from './reasoner.js';
 import { Reflector } from './reflector.js';
+import { Guardrails, guardTools } from './guardrails.js';
 import { MemoryStore } from './memory-store.js';
 import { RetrievalEngine } from './retrieval.js';
 import type { CellState, JournalEntry, Mission, Tool, ToolRegistry, ReasonerOptions, ReflectorOptions } from './types.js';
@@ -22,6 +23,8 @@ export interface CellConfig {
   reflectorOptions?: ReflectorOptions;
   retrieval?: RetrievalEngine;
   memoryStore?: MemoryStore;
+  /** Optional guardrail configuration. If omitted, guardrails are still enabled with sensible defaults. */
+  guardrails?: ConstructorParameters<typeof Guardrails>[0];
 }
 
 export class Cell {
@@ -41,14 +44,26 @@ export class Cell {
     this.journal = new ExecutionJournal(config.basePath);
     this.planner = new Planner({ maxSteps: config.maxRetries });
 
+    const guardrails = new Guardrails(config.guardrails ?? {
+      workspacePath: config.basePath,
+      defaultAllowList: config.shellAllowList,
+      requireApprovalForDestructive: true,
+      approvedDestructive: new Set<string>(),
+    });
+
     const customTools = config.tools ?? [];
-    const defaultRegistry: ToolRegistry = new ToolRegistryImpl([
-      ...customTools,
-      new ShellTool({ allowList: config.shellAllowList }),
-      new ReadFileTool(config.basePath),
-      new EditFileTool(config.basePath),
-      new VerifyTool(config.verificationCommands),
-    ]);
+    const defaultRegistry: ToolRegistry = new ToolRegistryImpl(
+      guardTools(
+        [
+          ...customTools,
+          new ShellTool({ allowList: config.shellAllowList }),
+          new ReadFileTool(config.basePath),
+          new EditFileTool(config.basePath),
+          new VerifyTool(config.verificationCommands),
+        ],
+        guardrails
+      )
+    );
 
     this.reasoner = config.reasoner ?? new Reasoner(config.reasonerOptions ?? { maxSteps: config.maxRetries }, defaultRegistry);
     this.reflector = config.reflector ?? new Reflector(config.reflectorOptions ?? { maxAttempts: config.maxRetries });
@@ -57,7 +72,7 @@ export class Cell {
     this.retrieval = config.retrieval ?? new RetrievalEngine({ topK: 5 });
 
     this.loopEngine = new LoopEngine(
-      customTools,
+      guardTools(customTools, guardrails),
       config.verificationCommands,
       config.maxRetries,
       undefined,

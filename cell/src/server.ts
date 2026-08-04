@@ -16,6 +16,7 @@ import { LeadEngineer } from './lead.js';
 import { GitMemory, FailureMemory } from './git-memory.js';
 import { MemorySummariser, SummaryMemory } from './summary.js';
 import { Scheduler } from './scheduler.js';
+import { Guardrails, hashAction } from './guardrails.js';
 import type { JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -103,6 +104,42 @@ export function startServer(cell: Cell, port = 3456) {
         const realOutput = output !== undefined ? String(output) : await actor.act(action);
         const observation = observer.observe(action, realOutput);
         res.end(JSON.stringify({ ok: true, observation }));
+        return;
+      }
+
+      if (url.pathname === '/guardrails/check' && req.method === 'POST') {
+        const body = await readBody();
+        const guardrails = new Guardrails({
+          workspacePath: process.cwd(),
+          defaultAllowList: ['npm', 'node', 'echo', 'ls'],
+          requireApprovalForDestructive: true,
+          approvedDestructive: new Set<string>(),
+        });
+        const result = guardrails.check({
+          stepId: 'manual',
+          tool: String(body.tool ?? 'shell'),
+          input: String(body.input ?? ''),
+        });
+        res.end(JSON.stringify({ ...result }));
+        return;
+      }
+
+      if (url.pathname === '/guardrails/approve' && req.method === 'POST') {
+        const body = await readBody();
+        const guardrails = new Guardrails({
+          workspacePath: process.cwd(),
+          defaultAllowList: ['npm', 'node', 'echo', 'ls'],
+          requireApprovalForDestructive: true,
+          approvedDestructive: new Set<string>(),
+        });
+        const action = {
+          stepId: 'manual',
+          tool: String(body.tool ?? 'shell'),
+          input: String(body.input ?? ''),
+        };
+        guardrails.approve(action);
+        const result = guardrails.check(action);
+        res.end(JSON.stringify({ approved: hashAction(action), ...result }));
         return;
       }
 
