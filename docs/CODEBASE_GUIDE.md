@@ -14,8 +14,10 @@ build-long-running-cell/
 │   ├── src/
 │   │   ├── types.ts              # Every shared type and interface
 │   │   ├── cell.ts               # Main durable state machine
-│   │   ├── main.ts               # Entry point that starts the cell server
-│   │   ├── server.ts             # HTTP API
+│   │   ├── main.ts               # Entry point that starts the cell server (lit factory)
+│   │   ├── main-dark.ts          # Entry point that starts the cell in dark-factory mode
+│   │   ├── factory.ts            # Lit/dark factory context builders
+│   │   ├── server.ts             # HTTP API and shared ServerContext
 │   │   ├── loop-engine.ts        # ReAct reasoning loop
 │   │   ├── planner.ts            # Produces Plan from a goal
 │   │   ├── reasoner.ts           # Picks the next Action
@@ -37,6 +39,7 @@ build-long-running-cell/
 │   │   ├── hitl.ts               # Human-in-the-loop gate
 │   │   ├── budget.ts             # Token/cost/runtime budget tracker
 │   │   ├── observability.ts      # Metrics collector
+│   │   ├── accountability-store.ts # Durable answerability records
 │   │   ├── orchestrator.ts       # End-to-end orchestration
 │   │   ├── eval.ts               # Evaluation harness
 │   │   ├── scheduler.ts          # Cron scheduler

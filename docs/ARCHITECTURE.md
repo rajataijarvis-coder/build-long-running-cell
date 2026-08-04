@@ -2,6 +2,29 @@
 
 This document describes the high-level architecture of the agent cell built in the course. It is intended as a single reference for operators and contributors who need to understand how the pieces fit together without reading all 26 chapters.
 
+## Shared services: why the HTTP API and the cell loop must agree
+
+`cell/src/server.ts` exposes an HTTP API. `cell/src/cell.ts` runs the autonomous loop. Both need the same view of safety, otherwise an operator could approve a destructive action in the dashboard while the cell loop still blocks it.
+
+To prevent that drift, `main.ts` builds a single set of durable services and passes them to both sides through `ServerContext`:
+
+```ts
+// cell/src/main.ts
+const context = createLitFactoryContext({ basePath });
+const server = startServer(context, port);
+```
+
+`ServerContext` (defined in `cell/src/server.ts`) holds:
+
+- `cell` — the durable state machine.
+- `guardrails` — the safety rule engine shared by the loop and the API.
+- `hitl` — the human-review gate shared by the loop and the API.
+- `memoryStore` — the read view over Git memory and the journal.
+- `budget` / `observability` — cost and metrics shared by both surfaces.
+- `verificationCommands` — the exact commands the cell uses, so `/verify` checks the same gate.
+
+Because both surfaces use the same instances, approving a destructive action via `POST /guardrails/approve` immediately affects the next `cell.tick()`. This is a deliberate architectural choice, not an implementation detail.
+
 ## Component overview
 
 ```mermaid
@@ -9,6 +32,7 @@ graph TD
     Operator([Operator])
     Dashboard[Next.js Dashboard<br/>frontend/src/app]
     CellAPI[Cell HTTP API<br/>cell/src/server.ts]
+    ServerContext[ServerContext<br/>shared services]
     Cell[Cell<br/>cell/src/cell.ts]
     LoopEngine[Loop Engine<br/>cell/src/loop-engine.ts]
     Planner[Planner<br/>cell/src/planner.ts]
@@ -35,12 +59,16 @@ graph TD
 
     Operator --> Dashboard
     Dashboard --> CellAPI
-    CellAPI --> Cell
+    CellAPI --> ServerContext
+    ServerContext --> Cell
+    ServerContext --> Guardrails
+    ServerContext --> HITL
+    ServerContext --> Budget
+    ServerContext --> Observability
+    ServerContext --> MemoryStore
     CellAPI --> LeadEngineer
     CellAPI --> Orchestrator
     CellAPI --> Scheduler
-    CellAPI --> Guardrails
-    CellAPI --> HITL
     CellAPI --> EvalHarness
     Cell --> LoopEngine
     LoopEngine --> Planner
@@ -64,10 +92,6 @@ graph TD
     GitMemory --> MemoryStore
     MemoryStore --> FailureMemory
     Scheduler --> Cell
-    Cell --> Guardrails
-    Cell --> HITL
-    Cell --> Budget
-    Cell --> Observability
     Orchestrator --> LeadEngineer
     Orchestrator --> Coordinator
     Orchestrator --> Guardrails
