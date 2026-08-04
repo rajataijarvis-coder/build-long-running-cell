@@ -420,6 +420,90 @@ Let the cell tick. Each time the mission reaches the verifying phase, the trace 
 
 3. **Use traces to drive retry policy.** Modify `CellRunner` or the outer `Cell.tick()` so that when a mission fails verification, the cell consults its trace. If the mission has failed verification more than twice in a row, it should mark the mission as `failed` instead of retrying blindly. Add a test that simulates three consecutive failures and asserts the mission stops retrying.
 
+## How traces differ from the execution journal
+
+In [Chapter 5: Execution journal](../05-execution-journal/) the cell writes phase-level `JournalEntry` records to `state/journal.jsonl`. Each entry answers the question, "What phase ran, and did it succeed?" The journal is a coarse timeline: planning, executing, verifying, reviewing.
+
+A verification trace is a finer-grained lens *inside* the verifying phase. It answers a different question: "How has this mission behaved across every verification attempt?"
+
+| Layer | Granularity | Use case |
+|-------|-------------|----------|
+| `VerificationSummary` | One attempt | Decide whether the current run passes the gate. |
+| `JournalEntry` with `state: 'verifying'` | One phase attempt | Record that the verifying phase ran. |
+| `VerificationTrace` | Every attempt for one mission | Detect regressions and flakiness over time. |
+| `EvalRun` with `verification-traces` | Whole cell | Surface aggregate trends in the dashboard and in release checks. |
+
+The journal is good for debugging *what happened in a single run*. Traces are good for spotting *patterns across runs*. Both are durable, both survive restarts, and both can be rebuilt from other data in an emergency, but they are intentionally separate concerns.
+
+## Viewing traces
+
+The HTTP server exposes `/traces` on the cell, and the Next.js dashboard proxies it through `/api/cell/traces`.
+
+### Cell endpoint
+
+`GET /traces` returns the full list of recorded traces:
+
+```json
+{
+  "ok": true,
+  "traces": [
+    {
+      "missionId": "trace-demo",
+      "startedAt": "2026-08-04T21:30:00.000Z",
+      "updatedAt": "2026-08-04T21:32:00.000Z",
+      "entries": [
+        { "attempt": 1, "passed": true, "timestamp": "...", "note": "passed" },
+        { "attempt": 2, "passed": false, "timestamp": "...", "note": "failed: npm run test" }
+      ]
+    }
+  ]
+}
+```
+
+The endpoint reuses the same `Cell` instance the loop uses, so it always reads the same `CellMemory` that `tick()` writes. There is no separate cache to keep in sync.
+
+### Dashboard `TracePanel`
+
+Open the dashboard at http://localhost:3000 and look for the **Verification Traces** panel. It shows:
+
+- The latest `verification-traces` eval task result, including its aggregate score and detail string.
+- One card per mission, with a row of attempt badges: green for passed, red for failed.
+- A `latest passed`/`latest failed` label that flips as soon as the next verification attempt completes.
+- A details modal for the full history of any mission.
+
+The panel polls `/api/cell/traces` and `/api/cell/eval/runs` every 5 seconds, so it updates without a page refresh while the cell is running.
+
+### Exercise: deliberately create a flaky mission
+
+The fastest way to understand traces is to manufacture a mission that alternates between passing and failing. We can do that by giving the cell a mission whose effect toggles a test file.
+
+1. Start the cell and server in auto mode from the `cell` directory:
+
+   ```bash
+   cd cell
+   npm run build
+   AUTO_TICK=true AUTO_SCHEDULE=true node dist/main.js &
+   ```
+
+2. Queue a harmless-looking mission whose instructions flip the status of a synthetic test:
+
+   ```bash
+   curl -X POST http://localhost:3456/missions \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "title": "Flaky trace demo",
+       "description": "Toggle a comment line at the top of cell/src/version.ts. Add it on the first run, remove it on the next run, and repeat."
+     }'
+   ```
+
+   > In a real exercise you would point this at a small fixture test under a `demo/` directory. The exact mechanics depend on the verification commands configured in the cell, but the goal is the same: create a deterministic alternation so you can *see* the trace change.
+
+3. Wait for the cell to tick several times. Each attempt appends a new trace entry. Open the dashboard and inspect the **Verification Traces** panel. You should see a red-green-red-green pattern.
+
+4. Click **Run Evaluation** in the `EvalPanel`. The `verification-traces` task should switch to `failed` with a detail line that mentions a flaky mission. If you then fix the mission and run it again, the pattern should turn green and the task should pass.
+
+This exercise proves that the trace is not just a pretty graph; it directly drives the evaluation score and the operator signal.
+
 ## Where to go next
 
 This chapter closes a longitudinal gap. The cell can now record *when* and *how often* missions fail verification, not just whether the latest run passed. That turns the evaluation harness from a snapshot into a trend detector.
