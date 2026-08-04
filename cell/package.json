@@ -7,6 +7,9 @@
     "test": "node --test \"dist/**/*.test.js\"",
     "lint": "eslint src --ext .ts",
     "dev": "node --watch dist/main.js",
+    "dev:dark": "node --watch dist/main-dark.js",
+    "start": "node dist/main.js",
+    "start:dark": "node dist/main-dark.js",
     "verify": "npm run lint && npm run build && npm test"
   },
   "devDependencies": {

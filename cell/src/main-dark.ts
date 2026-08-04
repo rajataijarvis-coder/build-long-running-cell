@@ -1,11 +1,11 @@
 import { startServer } from './server.js';
-import { createLitFactoryContext } from './factory.js';
+import { createDarkFactoryContext } from './factory.js';
 import { onShutdown } from './shutdown.js';
 import { CELL_VERSION } from './version.js';
 
 const basePath = process.cwd();
 
-const context = createLitFactoryContext({
+const context = createDarkFactoryContext({
   basePath,
   verificationCommands: [
     ['npm', ['run', 'lint']],
@@ -22,4 +22,5 @@ onShutdown(server, {
   timeoutMs: Number(process.env.SHUTDOWN_TIMEOUT_MS ?? '10000'),
 });
 
-console.log(`[cell ${CELL_VERSION}] lit-factory mode running on port ${port}`);
+console.log(`[cell ${CELL_VERSION}] dark-factory mode running on port ${port}`);
+console.warn('⚠️  Dark factory mode: human approval gates are disabled. Verify budgets and guardrails are still active.');
