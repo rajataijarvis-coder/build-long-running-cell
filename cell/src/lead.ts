@@ -1,8 +1,8 @@
 import { Coordinator, type CoordinationResult } from './coordinator.js';
-import type { Mission } from './types.js';
+import type { Mission, Tool, LeadRun } from './types.js';
 import type { Reasoner } from './reasoner.js';
 import type { Reflector } from './reflector.js';
-import type { Tool } from './types.js';
+import { GitMemory } from './git-memory.js';
 
 export interface LeadEngineerOptions {
   basePath: string;
@@ -13,6 +13,10 @@ export interface LeadEngineerOptions {
   tools?: Tool[];
   reasoner?: Reasoner;
   reflector?: Reflector;
+  /** Whether to run each decomposed mission through a specialist cell. */
+  useSpecialists?: boolean;
+  /** Optional durable memory for persisting lead-run summaries. */
+  memory?: GitMemory;
 }
 
 export interface DecomposedMission {
@@ -126,9 +130,23 @@ export class LeadEngineer {
       tools: this.options.tools,
       reasoner: this.options.reasoner,
       reflector: this.options.reflector,
+      useSpecialists: this.options.useSpecialists ?? false,
     });
 
     const coordination = await coordinator.coordinate(missions);
+
+    if (this.options.memory) {
+      const run: LeadRun = {
+        id: `lead-run-${Date.now()}`,
+        goal,
+        timestamp: now,
+        missionIds: missions.map((m) => m.id),
+        merged: coordination.merged,
+        rejected: coordination.rejected.map((r) => `${r.missionId}: ${r.reason}`),
+        failed: coordination.failed.map((f) => f.missionId),
+      };
+      await this.options.memory.recordLeadRun(run);
+    }
 
     return {
       goal,

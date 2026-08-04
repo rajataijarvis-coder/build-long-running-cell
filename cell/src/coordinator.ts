@@ -1,4 +1,5 @@
 import { CellRunner, type RunnerResult } from './runner.js';
+import { Specialist, kindForMission } from './specialist.js';
 import type { Mission, Tool } from './types.js';
 import type { Reasoner } from './reasoner.js';
 import type { Reflector } from './reflector.js';
@@ -10,6 +11,11 @@ export interface CoordinatorOptions {
   maxConcurrency?: number;
   maxRetries?: number;
   tools?: Tool[];
+  /**
+   * When true, the coordinator wraps each mission in a specialist cell tuned
+   * for the mission title. The default is false for backward compatibility.
+   */
+  useSpecialists?: boolean;
   reasoner?: Reasoner;
   reflector?: Reflector;
 }
@@ -24,6 +30,10 @@ export interface CoordinationResult {
 export class Coordinator {
   constructor(private readonly options: CoordinatorOptions) {}
 
+  private kindForMission(mission: Mission): import('./specialist.js').SpecialistKind {
+    return kindForMission(mission.title);
+  }
+
   async coordinate(missions: Mission[]): Promise<CoordinationResult> {
     const runners: CellRunner[] = [];
     const results: RunnerResult[] = [];
@@ -31,15 +41,31 @@ export class Coordinator {
 
     for (let i = 0; i < missions.length; i += maxConcurrency) {
       const batch = missions.slice(i, i + maxConcurrency);
-      const batchRunners = batch.map((m, idx) => new CellRunner({
-        name: `runner-${i + idx}`,
-        basePath: this.options.basePath,
-        verificationCommands: this.options.verificationCommands,
-        maxRetries: this.options.maxRetries,
-        tools: this.options.tools,
-        reasoner: this.options.reasoner,
-        reflector: this.options.reflector,
-      }));
+      const batchRunners = batch.map((m, idx) => {
+        const name = `runner-${i + idx}`;
+        if (!this.options.useSpecialists) {
+          return new CellRunner({
+            name,
+            basePath: this.options.basePath,
+            verificationCommands: this.options.verificationCommands,
+            maxRetries: this.options.maxRetries,
+            tools: this.options.tools,
+            reasoner: this.options.reasoner,
+            reflector: this.options.reflector,
+          });
+        }
+        const kind = this.kindForMission(m);
+        return new Specialist({
+          kind,
+          name,
+          basePath: this.options.basePath,
+          verificationCommands: this.options.verificationCommands,
+          maxRetries: this.options.maxRetries,
+          tools: this.options.tools,
+          reasoner: this.options.reasoner,
+          reflector: this.options.reflector,
+        }) as unknown as CellRunner;
+      });
       runners.push(...batchRunners);
 
       const batchResults = await Promise.all(

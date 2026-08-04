@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import { join } from 'path';
-import type { CellMemory, Mission, Decision } from './types.js';
+import type { CellMemory, Mission, Decision, LeadRun } from './types.js';
 
 const DEFAULT_MEMORY: CellMemory = {
   currentState: 'idle',
@@ -70,6 +70,13 @@ export class GitMemory {
     memory.decisions.push(decision);
     await this.save(memory);
     return decision;
+  }
+
+  async recordLeadRun(run: LeadRun): Promise<void> {
+    const memory = await this.load();
+    memory.leadRuns = memory.leadRuns ?? [];
+    memory.leadRuns.push(run);
+    await this.save(memory);
   }
 
   async addProposal(proposal: CellMemory['proposals'][number]): Promise<void> {

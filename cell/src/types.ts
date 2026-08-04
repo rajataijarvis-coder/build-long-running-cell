@@ -10,6 +10,16 @@ export interface Mission {
   updatedAt: string;
 }
 
+export interface LeadRun {
+  id: string;
+  goal: string;
+  timestamp: string;
+  missionIds: string[];
+  merged: string[];
+  rejected: string[];
+  failed: string[];
+}
+
 export interface CellMemory {
   currentState: CellState;
   currentMissionId?: string;
@@ -21,6 +31,8 @@ export interface CellMemory {
   reasoningContext?: ReasoningContext;
   /** Proposals produced by maker subagents and reviewed by checker subagents. */
   proposals: Proposal[];
+  /** Summaries of lead-engineer decomposition and coordination runs. */
+  leadRuns?: LeadRun[];
 }
 
 export interface ReasoningContext {

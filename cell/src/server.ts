@@ -13,6 +13,7 @@ import { MemoryStore } from './memory-store.js';
 import { RetrievalEngine } from './retrieval.js';
 import { Coordinator } from './coordinator.js';
 import { LeadEngineer } from './lead.js';
+import { GitMemory } from './git-memory.js';
 import type { JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -250,6 +251,8 @@ export function startServer(cell: Cell, port = 3456) {
           maxConcurrency: Number(body.maxConcurrency ?? 2),
           maxRetries: Number(body.maxRetries ?? 2),
           maxSubMissions: Number(body.maxSubMissions ?? 4),
+          useSpecialists: Boolean(body.useSpecialists),
+          memory: new GitMemory(process.cwd()),
         });
         const result = await lead.execute(goal);
         res.end(JSON.stringify({ ok: true, result }));
