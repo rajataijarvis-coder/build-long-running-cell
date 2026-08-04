@@ -173,13 +173,15 @@ This is a living list of issues found while reviewing the `build-long-running-ce
 **Problem:** After the `ServerContext` refactor, there is no test proving that a destructive action approved via `/guardrails/approve` is also approved inside the cell loop, or that a review resolved via `/reviews/resolve` is seen by `cell.tick()`.
 
 **Fix:**
-- [ ] Add `cell/src/server.integration.test.ts` that:
+- [x] Add `cell/src/server.integration.test.ts` that:
   1. Creates a cell + server sharing the same services.
   2. Queues a mission that needs HITL approval.
   3. Calls `/guardrails/approve` and `/reviews/resolve`.
   4. Verifies `cell.tick()` resumes with the approved state.
 
-**Files:** `cell/src/server.integration.test.ts` (new)
+**Status:** Fixed in commit `bdf552c`. Also corrected `cell.ts` to transition back to `executing` after an approved review, and updated `HumanInTheLoop.check` to honor previously approved reviews for the same mission/step.
+
+**Files:** `cell/src/server.integration.test.ts` (new), `cell/src/cell.ts`, `cell/src/hitl.ts`
 
 ---
 
