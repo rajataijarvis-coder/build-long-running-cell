@@ -41,26 +41,6 @@ export interface FailureRecord {
   reason?: string;
 }
 
-export interface CellMemory {
-  currentState: CellState;
-  currentMissionId?: string;
-  missions: Mission[];
-  progressLog: string[];
-  decisions: Decision[];
-  currentPlan?: Plan;
-  /** Context from the inner reasoning loop so a restart can resume mid-thought. */
-  reasoningContext?: ReasoningContext;
-  /** Proposals produced by maker subagents and reviewed by checker subagents. */
-  proposals: Proposal[];
-  /** Summaries of lead-engineer decomposition and coordination runs. */
-  leadRuns?: LeadRun[];
-  /** Record of classified failures so the cell can learn from them. */
-  failures?: FailureRecord[];
-  /** Curated summaries that compress long memory sequences into compact context. */
-  summaries?: MemorySummary[];
-}
-
-/** A synthetic memory document produced by summarising a group of raw records. */
 export interface MemorySummary {
   id: string;
   /** What this summary represents, e.g. 'lead-runs', 'failures', 'mission-history'. */
@@ -81,11 +61,89 @@ export interface MemorySummary {
 
 export type SummaryKind = 'lead-runs' | 'failures' | 'mission-history' | 'journal' | 'all';
 
-export interface ReasoningContext {
-  priorThought?: Thought;
-  priorObservation?: Observation;
-  attempt: number;
-  accumulatedTask: string;
+export interface ScheduledTask {
+  id: string;
+  name: string;
+  /** Cron expression in local wall-clock time (five-field cron). Example: five-field cron. */
+  cron: string;
+  /** One of: queue a single mission, run a lead-engineer goal, or run verification. */
+  action: 'mission' | 'lead' | 'verify';
+  payload: string;
+  timezone?: string;
+  /** Whether the scheduler should currently evaluate this task. */
+  enabled: boolean;
+  /** ISO timestamp of the last time the task fired. */
+  lastRunAt?: string;
+  /** ISO timestamp of the next scheduled run (computed). */
+  nextRunAt?: string;
+  /** Count of consecutive failures, used for exponential backoff. */
+  consecutiveFailures: number;
+  /** Last computed jitter offset in milliseconds. */
+  jitterMs: number;
+}
+
+export interface ReasonerOptions {
+  maxSteps?: number;
+}
+
+export interface ReflectorOptions {
+  maxAttempts?: number;
+  /**
+   * Maps substrings to verdict overrides. If the observation output or note
+   * contains a listed substring, the reflector returns that verdict immediately.
+   * This lets the cell treat different failure modes differently instead of
+   * retrying blindly. Later entries take precedence.
+   */
+  failureKinds?: Array<{
+    substring: string;
+    verdict: ReflectionVerdict;
+    reason: string;
+  }>;
+}
+
+export interface Tool {
+  name: string;
+  description: string;
+  execute: (input: string) => Promise<string>;
+}
+
+export interface ToolCall {
+  name: string;
+  input: string;
+}
+
+/** Registry metadata that lets a planner or reasoner pick the right tool. */
+export interface ToolRegistry {
+  tools: Tool[];
+  byName(name: string): Tool | undefined;
+  descriptions(): string;
+}
+
+export interface VerificationResult {
+  passed: boolean;
+  command: string;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+}
+
+export interface VerificationSummary {
+  passed: boolean;
+  results: VerificationResult[];
+}
+
+export interface MemoryDocument {
+  id: string;
+  kind: 'mission' | 'decision' | 'proposal' | 'journal' | 'progress';
+  missionId?: string;
+  text: string;
+  timestamp: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface RetrievalResult {
+  document: MemoryDocument;
+  score: number;
 }
 
 export interface Decision {
@@ -199,66 +257,26 @@ export interface Reflection {
   shouldRetry: boolean;
 }
 
-export interface ReasonerOptions {
-  maxSteps?: number;
+export interface ReasoningContext {
+  priorThought?: Thought;
+  priorObservation?: Observation;
+  attempt: number;
+  accumulatedTask: string;
 }
 
-export interface ReflectorOptions {
-  maxAttempts?: number;
-  /**
-   * Maps substrings to verdict overrides. If the observation output or note
-   * contains a listed substring, the reflector returns that verdict immediately.
-   * This lets the cell treat different failure modes differently instead of
-   * retrying blindly. Later entries take precedence.
-   */
-  failureKinds?: Array<{
-    substring: string;
-    verdict: ReflectionVerdict;
-    reason: string;
-  }>;
-}
-
-export interface Tool {
-  name: string;
-  description: string;
-  execute: (input: string) => Promise<string>;
-}
-
-export interface ToolCall {
-  name: string;
-  input: string;
-}
-
-/** Registry metadata that lets a planner or reasoner pick the right tool. */
-export interface ToolRegistry {
-  tools: Tool[];
-  byName(name: string): Tool | undefined;
-  descriptions(): string;
-}
-
-export interface VerificationResult {
-  passed: boolean;
-  command: string;
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}
-
-export interface VerificationSummary {
-  passed: boolean;
-  results: VerificationResult[];
-}
-
-export interface MemoryDocument {
-  id: string;
-  kind: 'mission' | 'decision' | 'proposal' | 'journal' | 'progress';
-  missionId?: string;
-  text: string;
-  timestamp: string;
-  metadata: Record<string, unknown>;
-}
-
-export interface RetrievalResult {
-  document: MemoryDocument;
-  score: number;
+export interface CellMemory {
+  currentState: CellState;
+  currentMissionId?: string;
+  missions: Mission[];
+  progressLog: string[];
+  decisions: Decision[];
+  currentPlan?: Plan;
+  reasoningContext?: ReasoningContext;
+  proposals: Proposal[];
+  /** Summaries of lead-engineer decomposition and coordination runs. */
+  leadRuns?: LeadRun[];
+  /** Record of classified failures so the cell can learn from them. */
+  failures?: FailureRecord[];
+  /** Curated summaries that compress long memory sequences into compact context. */
+  summaries?: MemorySummary[];
 }

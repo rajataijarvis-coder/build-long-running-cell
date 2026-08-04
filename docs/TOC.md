@@ -57,7 +57,7 @@
 | 15 | published |
 | 16 | published |
 | 17 | published |
-| 18 | planned |
+| 18 | published |
 | 19 | planned |
 | 20 | planned |
 | 21 | planned |

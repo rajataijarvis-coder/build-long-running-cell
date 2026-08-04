@@ -63,6 +63,20 @@ interface MemorySummary {
   metadata: Record<string, unknown>;
 }
 
+interface ScheduledTask {
+  id: string;
+  name: string;
+  cron: string;
+  action: string;
+  payload: string;
+  timezone?: string;
+  enabled: boolean;
+  nextRunAt?: string;
+  lastRunAt?: string;
+  consecutiveFailures: number;
+  jitterMs: number;
+}
+
 interface LeadResult {
   ok: boolean;
   result?: {
@@ -93,6 +107,11 @@ export default function Home() {
   const [summaries, setSummaries] = useState<MemorySummary[]>([]);
   const [summaryKindFilter, setSummaryKindFilter] = useState('');
   const [summaryGenerated, setSummaryGenerated] = useState(0);
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  const [taskName, setTaskName] = useState('hourly-verify');
+  const [taskCron, setTaskCron] = useState('0 * * * *');
+  const [taskAction, setTaskAction] = useState<'mission' | 'lead' | 'verify'>('verify');
+  const [taskPayload, setTaskPayload] = useState('');
 
   async function fetchStatus() {
     const res = await fetch('/api/cell/status');
@@ -231,6 +250,75 @@ export default function Home() {
       setLogs((l) => [...l, `Loaded ${data.summaries.length} summary(s)`]);
     } else {
       setLogs((l) => [...l, `Summary fetch failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function fetchTasks() {
+    const res = await fetch('/api/cell/schedule', { cache: 'no-store' });
+    const data = await res.json();
+    if (data.ok && data.tasks) {
+      setTasks(data.tasks);
+      setLogs((l) => [...l, `Loaded ${data.tasks.length} scheduled task(s)`]);
+    } else {
+      setLogs((l) => [...l, `Task fetch failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function createTask(e: React.FormEvent) {
+    e.preventDefault();
+    setLogs((l) => [...l, `Scheduling ${taskName}...`]);
+    const res = await fetch('/api/cell/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: taskName,
+        cron: taskCron,
+        action: taskAction,
+        payload: taskPayload,
+        enabled: true,
+      }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      setLogs((l) => [...l, `Created scheduled task ${data.task.id}`]);
+      await fetchTasks();
+    } else {
+      setLogs((l) => [...l, `Schedule failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function runTask(id: string) {
+    setLogs((l) => [...l, `Running task ${id}...`]);
+    const res = await fetch(`/api/cell/tasks/${id}/run`, { method: 'POST', cache: 'no-store' });
+    const data = await res.json();
+    if (data.ok && data.result) {
+      setLogs((l) => [...l, `Task ${id} ran=${data.result.ran}${data.result.error ? ` error=${data.result.error}` : ''}`]);
+      await fetchTasks();
+    } else {
+      setLogs((l) => [...l, `Run task failed: ${data.error ?? 'unknown'}`]);
+    }
+  }
+
+  async function toggleTask(id: string, enabled: boolean) {
+    const res = await fetch(`/api/cell/tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+      cache: 'no-store',
+    });
+    const data = await res.json();
+    if (data.ok) {
+      setLogs((l) => [...l, `Task ${id} ${enabled ? 'enabled' : 'disabled'}`]);
+      await fetchTasks();
+    }
+  }
+
+  async function deleteTask(id: string) {
+    const res = await fetch(`/api/cell/tasks/${id}`, { method: 'DELETE', cache: 'no-store' });
+    const data = await res.json();
+    if (data.ok) {
+      setLogs((l) => [...l, `Deleted task ${id}`]);
+      await fetchTasks();
     }
   }
 
@@ -431,6 +519,97 @@ export default function Home() {
                 <p className="text-slate-300 whitespace-pre-wrap">{s.text}</p>
                 <p className="text-slate-500 text-xs">keywords: {s.keywords.slice(0, 6).join(', ')}</p>
                 <p className="text-slate-500 text-xs">{new Date(s.timestamp).toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-slate-700 p-4 mb-6">
+        <h2 className="text-xl font-semibold mb-2">Scheduling & Backpressure</h2>
+        <p className="text-sm text-slate-400 mb-3">
+          Schedule recurring work, run tasks manually, and pause tasks when the system is overloaded.
+        </p>
+
+        <form onSubmit={createTask} className="flex flex-col gap-2 mb-4">
+          <div className="flex gap-2">
+            <input
+              value={taskName}
+              onChange={(e) => setTaskName(e.target.value)}
+              placeholder="Task name"
+              className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1"
+            />
+            <input
+              value={taskCron}
+              onChange={(e) => setTaskCron(e.target.value)}
+              placeholder="Cron (five-field)"
+              className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1"
+            />
+          </div>
+          <div className="flex gap-2">
+            <select
+              value={taskAction}
+              onChange={(e) => setTaskAction(e.target.value as typeof taskAction)}
+              className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
+            >
+              <option value="verify">verify</option>
+              <option value="mission">mission</option>
+              <option value="lead">lead</option>
+            </select>
+            <input
+              value={taskPayload}
+              onChange={(e) => setTaskPayload(e.target.value)}
+              placeholder="Payload (goal or description)"
+              className="flex-1 bg-slate-800 border border-slate-600 rounded px-2 py-1"
+            />
+            <button type="submit" className="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 transition">
+              Schedule
+            </button>
+          </div>
+        </form>
+
+        <div className="flex gap-2 mb-3">
+          <button onClick={fetchTasks} className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 transition">
+            Load Tasks
+          </button>
+        </div>
+
+        {tasks.length > 0 && (
+          <div className="bg-slate-900 rounded p-3 text-sm space-y-2 max-h-60 overflow-auto">
+            {tasks.map((t) => (
+              <div key={t.id} className="border-b border-slate-800 last:border-0 pb-2 last:pb-0">
+                <div className="flex justify-between items-start">
+                  <p className="text-emerald-400">
+                    {t.name} <span className="text-slate-500">({t.action})</span>
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => runTask(t.id)}
+                      className="px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-600 text-xs"
+                    >
+                      Run
+                    </button>
+                    <button
+                      onClick={() => toggleTask(t.id, !t.enabled)}
+                      className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs"
+                    >
+                      {t.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button
+                      onClick={() => deleteTask(t.id)}
+                      className="px-2 py-1 rounded bg-rose-700 hover:bg-rose-600 text-xs"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+                <p className="text-slate-400">cron: {t.cron}</p>
+                {t.payload && <p className="text-slate-400">payload: {t.payload}</p>}
+                <p className="text-slate-500 text-xs">
+                  next: {t.nextRunAt ? new Date(t.nextRunAt).toLocaleString() : 'not set'}
+                  {t.lastRunAt && ` · last: ${new Date(t.lastRunAt).toLocaleString()}`}
+                  {t.consecutiveFailures > 0 && ` · failures: ${t.consecutiveFailures}`}
+                </p>
               </div>
             ))}
           </div>

@@ -15,6 +15,7 @@ import { Coordinator } from './coordinator.js';
 import { LeadEngineer } from './lead.js';
 import { GitMemory, FailureMemory } from './git-memory.js';
 import { MemorySummariser, SummaryMemory } from './summary.js';
+import { Scheduler } from './scheduler.js';
 import type { JournalEntry, Mission } from './types.js';
 
 export function startServer(cell: Cell, port = 3456) {
@@ -302,6 +303,76 @@ export function startServer(cell: Cell, port = 3456) {
         });
         const result = await lead.execute(goal);
         res.end(JSON.stringify({ ok: true, result }));
+        return;
+      }
+
+      if (url.pathname === '/schedule' && req.method === 'POST') {
+        const body = await readBody();
+        const scheduler = new Scheduler({
+          basePath: process.cwd(),
+          verificationCommands: [
+            ['npm', ['run', 'lint']],
+            ['npm', ['run', 'build']],
+            ['npm', ['test']],
+          ],
+        });
+        const task = await scheduler.schedule({
+          name: String(body.name ?? 'scheduled-task'),
+          cron: String(body.cron ?? '* * * * *'),
+          action: body.action === 'lead' || body.action === 'verify' ? body.action : 'mission',
+          payload: String(body.payload ?? ''),
+          timezone: body.timezone !== undefined ? String(body.timezone) : undefined,
+          enabled: body.enabled !== false,
+        });
+        res.end(JSON.stringify({ ok: true, task }));
+        return;
+      }
+
+      if (url.pathname === '/tasks') {
+        const scheduler = new Scheduler({ basePath: process.cwd() });
+        const tasks = await scheduler.list();
+        res.end(JSON.stringify({ ok: true, tasks }));
+        return;
+      }
+
+      const runTaskMatch = url.pathname.match(/^\/tasks\/([^/]+)\/run$/);
+      if (runTaskMatch && req.method === 'POST') {
+        const scheduler = new Scheduler({ basePath: process.cwd() });
+        const result = await scheduler.runTask(runTaskMatch[1]);
+        res.end(JSON.stringify({ ok: !result.error, result }));
+        return;
+      }
+
+      const taskMatch = url.pathname.match(/^\/tasks\/([^/]+)$/);
+      if (taskMatch && req.method === 'PATCH') {
+        const body = await readBody();
+        const scheduler = new Scheduler({ basePath: process.cwd() });
+        const updated = await scheduler.update(taskMatch[1], {
+          name: body.name !== undefined ? String(body.name) : undefined,
+          cron: body.cron !== undefined ? String(body.cron) : undefined,
+          action: body.action === 'lead' || body.action === 'verify' ? body.action : undefined,
+          payload: body.payload !== undefined ? String(body.payload) : undefined,
+          timezone: body.timezone !== undefined ? String(body.timezone) : undefined,
+          enabled: body.enabled !== undefined ? Boolean(body.enabled) : undefined,
+        });
+        if (!updated) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ ok: false, error: 'task not found' }));
+          return;
+        }
+        res.end(JSON.stringify({ ok: true, task: updated }));
+        return;
+      }
+
+      if (taskMatch && req.method === 'DELETE') {
+        const scheduler = new Scheduler({ basePath: process.cwd() });
+        const removed = await scheduler.remove(taskMatch[1]);
+        if (!removed) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ ok: false, error: 'task not found' }));
+          return;
+        }
+        res.end(JSON.stringify({ ok: true }));
         return;
       }
 
