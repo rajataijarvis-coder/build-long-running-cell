@@ -53,7 +53,6 @@ export class Cell {
   private reflector: Reflector;
   private memoryStore: MemoryStore;
   private retrieval: RetrievalEngine;
-  private budget: BudgetTracker;
   private observability: Observability;
   private hitl: HumanInTheLoop;
   private accountability: AccountabilityStore;
@@ -124,6 +123,7 @@ export class Cell {
   constructor(config: CellConfig) {
     this.config = config;
     this.basePath = config.basePath;
+    this.verificationCommands = config.verificationCommands;
     this.memory = new GitMemory(config.basePath);
     this.journal = new ExecutionJournal(config.basePath);
 
@@ -175,6 +175,12 @@ export class Cell {
 
   /** Expose the workspace base path so callers (e.g., the HTTP server) can create co-located durable stores. */
   readonly basePath: string;
+
+  /** Verification commands wired into this cell. */
+  readonly verificationCommands: [string, string[]][];
+
+  /** Budget tracker shared with the HTTP server context. */
+  readonly budget: BudgetTracker;
 
   async state(): Promise<CellState> {
     return (await this.memory.load()).currentState;
